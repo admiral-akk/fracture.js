@@ -6,6 +6,8 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader'
 import GUI from 'lil-gui'
 import overlayVertexShader from './shaders/overlay/vertex.glsl'
 import overlayFragmentShader from './shaders/overlay/fragment.glsl'
+import crackVertexShader from './shaders/crack/vertex.glsl'
+import crackFragmentShader from './shaders/crack/fragment.glsl'
 import { gsap } from 'gsap'
 import Stats from 'stats-js'
 
@@ -92,15 +94,65 @@ camera.position.y = 1;
 camera.position.z = 1;
 scene.add(camera);
 const controls = new OrbitControls(camera, renderer.domElement)
-controls.enabled = true;
+controls.enableRotate = false;
+
+
+/**
+ * Mouse tracking
+ */
+const raycaster = new THREE.Raycaster(camera.position);
+raycaster.layers.set(1);
+const mouse = {
+    start: null,
+    end: null,
+    startHit: null,
+    startNormal: null,
+    endHit: null
+}
+
+const mousePos = (event) => {
+    return new THREE.Vector2(
+        ( event.clientX / window.innerWidth ) * 2 - 1,
+        - ( event.clientY / window.innerHeight ) * 2 + 1
+    )
+}
+window.addEventListener( 'pointermove', (event) => {
+    if (mouse.start) {
+        raycaster.setFromCamera( mouse.start, camera );
+        const intersects = raycaster.intersectObjects( scene.children );
+        if (intersects.length > 0) {
+            mouse.startHit = intersects[0].point.clone();
+            mouse.startNormal = intersects[0].normal.clone();
+        }
+        mouse.end = mousePos(event);
+        raycaster.setFromCamera( mouse.end, camera );
+        const intersects2 = raycaster.intersectObjects( scene.children );
+        if (intersects2.length > 0) {
+            mouse.endHit = intersects2[0].point.clone();
+        }
+        console.log(mouse.startHit)
+        console.log(mouse.startNormal)
+        console.log(mouse.endHit)
+    }
+} );
+window.addEventListener('pointerdown', (event) => {
+    mouse.start = mousePos(event);
+    mouse.end = null;
+  });
+window.addEventListener('pointerup', (event) => {
+    mouse.start = null;
+    mouse.end = null;
+});
 
 /**
  * Debug
  */
 
-const debugObject = {timeSpeed: 1.0}
+const debugObject = {timeSpeed: 1.0, color: 2., stepVal: 0.}
 const gui = new GUI();
 gui.add(debugObject, 'timeSpeed').min(0).max(3).step(0.1);
+gui.add(debugObject, 'color').min(0).max(4).step(1.);
+gui.add(debugObject, 'stepVal').min(-2).max(2).step(0.01);
 
 
 /**
@@ -145,8 +197,24 @@ loadingManager.onProgress = (_, itemsLoaded, itemsTotal) =>
  *  Box
  */
 const boxG = new THREE.BoxGeometry()
-const boxM = new THREE.MeshBasicMaterial({map: texture})
+const boxM = new THREE.ShaderMaterial({
+    vertexShader: crackVertexShader, 
+    fragmentShader: crackFragmentShader,
+    uniforms: {
+        mIsDragging: {value: false},
+        mStart: {value: new THREE.Vector2()},
+        mEnd: {value: new THREE.Vector2()},
+        startHit: {value: new THREE.Vector2()},
+        startNormal: {value: new THREE.Vector2()},
+        endHit: {value: new THREE.Vector2()},
+        c: {value: debugObject.color},
+        stepVal : {value: debugObject.stepVal}
+        
+    }
+})
+
 const boxMesh = new THREE.Mesh(boxG, boxM)
+boxMesh.layers.enable(1);
 scene.add(boxMesh)
 
 const rotateBox = (time) => {
@@ -160,15 +228,34 @@ const clock = new THREE.Clock()
 const tick = () =>
 {
     stats.begin()
-    if (controls.enabled){
+    if (timeTracker.enabled){
         timeTracker.elapsedTime =  timeTracker.elapsedTime + debugObject.timeSpeed * clock.getDelta();
     }
 
     // update controls
     controls.update()
+    
+    // update box
+    rotateBox(timeTracker.elapsedTime)
+    boxM.uniforms.mIsDragging.value = mouse.end !== null;
+    if (boxM.uniforms.mIsDragging.value) {
+        boxM.uniforms.mStart.value = mouse.start;
+        boxM.uniforms.mEnd.value = mouse.end;
+    }
+    if (mouse.startHit) {
+        boxM.uniforms.startHit.value = mouse.startHit;
+    }
+    if (mouse.endHit) {
+        boxM.uniforms.endHit.value = mouse.endHit;
+    }
+    if (mouse.startNormal) {
+        boxM.uniforms.startNormal.value = mouse.startNormal;
+    }
+    boxM.uniforms.c.value = debugObject.color;
+    boxM.uniforms.stepVal.value = debugObject.stepVal;
+
 
     // Render scene
-    rotateBox(timeTracker.elapsedTime)
     renderer.render(scene, camera)
 
     // Call tick again on the next frame
