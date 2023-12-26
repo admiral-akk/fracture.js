@@ -40,9 +40,25 @@ dracoLoader.setDecoderPath("./draco/gltf/");
 class Plane {
     constructor(position, normal) {
         this.position = position;
-        this.normal = normal;
+        this.normal = normal.normalize();
     }
 
+    intersection(start,end) {
+        // if it doesn't intersect, return
+        if (!this.cuts(start,end)) {
+            return null;
+        }
+
+        const delta = new THREE.Vector3();
+        delta.subVectors(end, start);
+        delta.normalize();
+        const planeDelta = new THREE.Vector3();
+        planeDelta.subVectors(this.position,  start);
+        const len = Math.abs(planeDelta.dot(this.normal));
+        delta.multiplyScalar(len);
+        delta.add(this.position); 
+        return delta;
+    }
     cuts(start, end) {
         let startDist = start.sub(this.position).dot(this.normal);
         let endDist = end.sub(this.position).dot(this.normal);
@@ -57,6 +73,11 @@ class HalfEdge {
         this.prev = null;
         this.next = null;
         this.twin = null;
+    }
+
+    setNext(next) {
+        this.next = next;
+        next.prev = this;
     }
 }
 
@@ -74,14 +95,18 @@ class DcelMesh {
         return this.edges.get(index)
     }
 
-    addVertex(vertex) {
+    addNormalizedVertex(vertex) {
     let existingIndex = this.vertices.findIndex(v => v.equals(vertex))
     if (existingIndex >= 0 ) {
         return existingIndex;
     } else {
+        return this.addVertex(vertex);
+    }
+    }
+
+    addVertex(vertex) {
         this.vertices.push(vertex);
         return this.vertices.length - 1;
-    }
     }
 
     addEdge(edge) {
@@ -92,6 +117,16 @@ class DcelMesh {
             twin.twin = edge;
             edge.twin = twin;
         }
+        return edge
+    }
+
+    deleteEdge(edge) {
+        let index = this.index(edge.start, edge.end);
+        this.edges.delete(index);
+        let twin = this.getEdge(edge.end, edge.start);
+        if (twin) {
+            twin.twin = null;
+        }
     }
 
     constructor(vertices, faces) {
@@ -99,24 +134,52 @@ class DcelMesh {
         const indexRemapping = new Map();
         for (let i = 0; i < vertices.length; i += 3) {
             let vertex = new THREE.Vector3().fromArray(vertices, i)
-            let index = this.addVertex(vertex)
+            let index = this.addNormalizedVertex(vertex)
             indexRemapping.set(i / 3, index)
         }
         const remappedFaces = faces.map(face => (face.map(i => indexRemapping.get(i))));
         this.edges = new Map();
         for (let face of remappedFaces) {
-            for (let i = 0; i < face.length; i++) {
-                let start = face[i];
-                let end = face[(i + 1) % face.length];
-                this.addEdge(new HalfEdge(start, end));
+            this.addFace(face)
+        }
+    }
+
+    // tries to break the mesh into seperate pieces
+    break() {
+        const clusters = []
+        const visitedEdges = []
+        for (let edge of this.edges.values()) {
+            const cluster = []
+            const queue = [[null, edge]]
+            while (queue.length > 0) {
+                const [prev, next] = queue.pop();
+                if (visitedEdges.includes(next)) {
+                    continue;
+                }
+                visitedEdges.push(next);
+                cluster.push(next);
+                queue.push([next, next.next], [next, next.prev], [next, next.twin]);
             }
-            for (let i = 0; i < face.length; i++) {
-                let prev = this.getEdge(face[i], face[(i + 1) % face.length]);
-                let next = this.getEdge(face[(i + 1) % face.length],face[(i + 2) % face.length]);
-                prev.next = next;
-                next.prev = prev;
+            if (cluster.length > 0) {
+                clusters.push(cluster)
             }
         }
+        console.log(clusters)
+    }
+
+    chainEdges(edges) {
+        edges.forEach((e, i) => {
+            if (i < edges.length - 1){
+            e.setNext(edges[i+1]);}
+        })
+    }
+
+    addFace(indices) {
+        let edges = indices.map((v, i) => new HalfEdge(v, indices[(i+1) % indices.length]));
+        edges.forEach(e => this.addEdge(e))
+        edges.push(edges[0])
+
+        this.chainEdges(edges);
     }
 
     cut(plane) {
@@ -141,17 +204,60 @@ class DcelMesh {
                 next = next.next;
             }
 
-            for (let i = 0; i < cutEdges.length; i += 2) {
-                let first = cutEdges[i];
-                let second = cutEdges[i+1];
-
-
-            }
-
             // each pair of edges belongs to the same face. 
             // go through each pair, split them, add two new half edges, and then store them
+            var leftPoints = []
+            var rightPoints = []
+            for (let i = 0; i < cutEdges.length; i += 2) {
+                const vertex = plane.intersection(this.getVertex(cutEdges[i].start),
+                this.getVertex(cutEdges[i].end));
+                leftPoints.push(this.addVertex(vertex))
+                rightPoints.push(this.addVertex(vertex))
+            }
+            
+            for (let i = 0; i < cutEdges.length; i += 2) {
+                let first = cutEdges[i];
+                let second = cutEdges[(i+1) % cutEdges.length];
+                const firstLeftIndex = leftPoints[i / 2]
+                const firstRightIndex = rightPoints[i / 2]
+                const secondLeftIndex = leftPoints[(i / 2+1) % leftPoints.length]
+                const secondRightIndex = rightPoints[(i / 2+1) % rightPoints.length]
+
+                const leftStart = this.addEdge(new HalfEdge(first.start, firstLeftIndex))
+                const leftEdge = this.addEdge(new HalfEdge(firstLeftIndex, secondLeftIndex))
+                const leftEnd = this.addEdge(new HalfEdge(secondLeftIndex, second.end))
+
+                const rightStart = this.addEdge(new HalfEdge(second.start, secondRightIndex))
+                const rightEdge = this.addEdge(new HalfEdge(secondRightIndex, firstRightIndex))
+                const rightEnd = this.addEdge(new HalfEdge(firstRightIndex, first.end))
+
+                if (second.prev === first) {
+                    this.chainEdges([rightStart, rightEdge, rightEnd, rightStart])
+
+                } else {
+                    this.chainEdges([second.prev, rightStart, rightEdge, rightEnd, first.next])
+                }
+
+                if (first.prev === second) {
+                    this.chainEdges([ leftStart, leftEdge, leftEnd, leftStart])
+
+                } else {
+                    this.chainEdges([first.prev, leftStart, leftEdge, leftEnd, second.next])
+                }
+
+                this.deleteEdge(first);
+                this.deleteEdge(second);
+            }
+
+            this.addFace(leftPoints.reverse())
+            this.addFace(rightPoints)
             break;
         }
+        console.log(this.edges)
+        console.log(Array.from(this.edges.values()).filter(e => e.prev === null))
+        console.log(Array.from(this.edges.values()).filter(e => e.next === null))
+        console.log(Array.from(this.edges.values()).filter(e => e.twin === null))
+        this.break()
     }
 
     toVertices() {
