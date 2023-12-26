@@ -33,7 +33,6 @@ const gltfLoader = new GLTFLoader(loadingManager);
 gltfLoader.setDRACOLoader(dracoLoader);
 dracoLoader.setDecoderPath("./draco/gltf/");
 
-
 /**
  * DCEL: https://en.wikipedia.org/wiki/Doubly_connected_edge_list
  */
@@ -45,18 +44,17 @@ class Plane {
 
     intersection(start,end) {
         // if it doesn't intersect, return
-        if (!this.cuts(start,end)) {
+        if (!this.cuts(start.clone(),end.clone())) {
             return null;
         }
 
         const delta = new THREE.Vector3();
         delta.subVectors(end, start);
-        delta.normalize();
         const planeDelta = new THREE.Vector3();
-        planeDelta.subVectors(this.position,  start);
+        planeDelta.subVectors(this.position, start);
         const len = Math.abs(planeDelta.dot(this.normal));
         delta.multiplyScalar(len);
-        delta.add(this.position); 
+        delta.add(start);
         return delta;
     }
     cuts(start, end) {
@@ -129,12 +127,15 @@ class DcelMesh {
         }
     }
 
-    constructor(vertices, faces) {
+    constructor(vertices, faces, isNormalized = false) {
+        console.log(vertices)
+        console.log(faces)
+        console.log(isNormalized)
         this.vertices = [];
         const indexRemapping = new Map();
         for (let i = 0; i < vertices.length; i += 3) {
             let vertex = new THREE.Vector3().fromArray(vertices, i)
-            let index = this.addNormalizedVertex(vertex)
+            let index = isNormalized ? this.addVertex(vertex) : this.addNormalizedVertex(vertex)
             indexRemapping.set(i / 3, index)
         }
         const remappedFaces = faces.map(face => (face.map(i => indexRemapping.get(i))));
@@ -164,13 +165,39 @@ class DcelMesh {
                 clusters.push(cluster)
             }
         }
-        console.log(clusters)
+        
+        var newMeshes = []
+
+        for (let cluster of clusters) {
+            const visitedEdges = []
+            const faces = []
+            for (let edge of cluster) {
+                if (visitedEdges.includes(edge)) {
+                    continue;
+                }
+                visitedEdges.push(edge);
+                var next = edge.next;
+                const face = [edge.start]
+                while (next !== edge) {
+                    visitedEdges.push(next);
+                    face.push(next.start);
+                    next = next.next;
+                }
+                faces.push(face)
+            }
+            let vertexArray = new Float32Array(this.vertices.length * 3);
+            this.vertices.forEach((v, i) => v.toArray(vertexArray, 3*i));
+            newMeshes.push(new DcelMesh(vertexArray,faces,false));
+        }
+
+        return newMeshes;
     }
 
     chainEdges(edges) {
         edges.forEach((e, i) => {
-            if (i < edges.length - 1){
-            e.setNext(edges[i+1]);}
+            if (i < edges.length - 1) {
+            e.setNext(edges[i+1]);
+            }
         })
     }
 
@@ -253,11 +280,6 @@ class DcelMesh {
             this.addFace(rightPoints)
             break;
         }
-        console.log(this.edges)
-        console.log(Array.from(this.edges.values()).filter(e => e.prev === null))
-        console.log(Array.from(this.edges.values()).filter(e => e.next === null))
-        console.log(Array.from(this.edges.values()).filter(e => e.twin === null))
-        this.break()
     }
 
     toVertices() {
@@ -272,19 +294,17 @@ class DcelMesh {
     }
 
     toVerticesIndices() {
-        const traversedEdges = new Map();
+        const traversedEdges = [];
         var indices = [];
         for (let edge of this.edges.values()) {
-            let index = this.index(edge.start, edge.end);
-            if (traversedEdges.has(index)) {
+            if (traversedEdges.includes(edge)) {
                 continue;
             }
-            traversedEdges.set(index, true);
+            traversedEdges.push(edge);
             var next = edge.next;
-            while (next.end !== edge.start) {
+            while (!traversedEdges.includes(next)) {
                 indices.push(edge.start,next.start,next.end);
-                let index = this.index(next.start, next.end);
-                traversedEdges.set(index, true);
+                traversedEdges.push(next);
                 next = next.next;
             }
         }
@@ -350,12 +370,11 @@ window.addEventListener('dblclick', () => {
  * Setup camera
  */
 const camera = new THREE.PerspectiveCamera(75, sizes.width / sizes.height);
-camera.position.x = 1;
-camera.position.y = 1;
-camera.position.z = 1;
+camera.position.x = 3;
+camera.position.y = 3;
+camera.position.z = 3;
 scene.add(camera);
 const controls = new OrbitControls(camera, renderer.domElement)
-controls.enableRotate = false;
 
 
 /**
@@ -441,7 +460,7 @@ loadingManager.onProgress = (_, itemsLoaded, itemsTotal) =>
  */
 
 const boxGeo = new THREE.BoxGeometry();
-function splitToNChunks(array, len) {
+function splitToNChunks(array) {
     let result = [];
     while(array.length > 0) {
         result.push(array.splice(0, 3));
@@ -452,34 +471,70 @@ var vertices = Array.from(boxGeo.attributes.position.array);
 var indices = splitToNChunks(Array.from(boxGeo.index.array), 3);
 var dcelMesh = new DcelMesh(vertices, indices);
 
-let vertices2 = dcelMesh.toVertices();
+const boxMaterials = []
+const boxMeshes = []
+const boxDeclMeshes = []
 
-const boxG = new THREE.BufferGeometry();
-boxG.setAttribute( 'position', new THREE.BufferAttribute(vertices2, 3))
-boxG.computeVertexNormals()
-boxG.computeBoundingBox();
-const boxM = new THREE.ShaderMaterial({
-    vertexShader: crackVertexShader, 
-    fragmentShader: crackFragmentShader,
-    uniforms: {
-        mIsDragging: {value: false},
-        mStart: {value: new THREE.Vector2()},
-        mEnd: {value: new THREE.Vector2()},
-        startHit: {value: new THREE.Vector2()},
-        startNormal: {value: new THREE.Vector2()},
-        endHit: {value: new THREE.Vector2()},
-        c: {value: debugObject.color},
-        stepVal : {value: debugObject.stepVal}
+const addDecl = decl => {
+    const boxG = new THREE.BufferGeometry();
+    let vertices = decl.toVertices();
+    boxG.setAttribute( 'position', new THREE.BufferAttribute(vertices, 3));
+    boxG.computeVertexNormals();
+    boxG.computeBoundingBox();
+    const material = new THREE.ShaderMaterial({
+        wireframe: true,
+        vertexShader: crackVertexShader, 
+        fragmentShader: crackFragmentShader,
+        uniforms: {
+            mIsDragging: {value: false},
+            mStart: {value: new THREE.Vector2()},
+            mEnd: {value: new THREE.Vector2()},
+            startHit: {value: new THREE.Vector2()},
+            startNormal: {value: new THREE.Vector2()},
+            endHit: {value: new THREE.Vector2()},
+            c: {value: debugObject.color},
+            stepVal : {value: debugObject.stepVal}
+        }
+    })
+    boxMaterials.push(material);
+    const mesh = new THREE.Mesh(boxG, material);
+    mesh.position.randomDirection();
+    mesh.layers.enable(1);
+    scene.add(mesh);
+    boxMeshes.push(mesh);
+    return mesh;
+}
+
+const updateDecl = newMeshes => {
+    boxMeshes.forEach(v => scene.remove(v));
+    boxMeshes.length = 0;
+    boxDeclMeshes.length = 0;
+    boxMaterials.length = 0;
+    newMeshes.forEach(m => {
+        boxDeclMeshes.push(m)
+    })
+    boxDeclMeshes.forEach(m => addDecl(m));
+    console.log(boxDeclMeshes);
+    console.log(boxMeshes);
+    console.log(scene.children);
+} 
+updateDecl([dcelMesh])
+
+const cutMesh = plane => {
+    let newMeshes = boxDeclMeshes.map(m => {
         
-    }
-})
+        dcelMesh.cut(plane)
+       return dcelMesh.break();
+    } )
 
-const boxMesh = new THREE.Mesh(boxG, boxM)
-boxMesh.layers.enable(1);
-scene.add(boxMesh)
+    updateDecl(newMeshes.flat())
+    
+}
+
+cutMesh(new Plane(new THREE.Vector3(), new THREE.Vector3(0,1,0)))
 
 const rotateBox = (time) => {
-    boxMesh.setRotationFromEuler(new THREE.Euler(0, time, 0)) 
+    boxMeshes.forEach(mesh => mesh.setRotationFromEuler(new THREE.Euler(0, time, 0)))
 }
 
 /**
@@ -513,13 +568,21 @@ const updateCut = () => {
     }
 
     if (mouse.justReleased) {
+        mouse.justReleased= false;
+        if (!cut.endHit || !cut.startHit) {
+            return;
+        }
         var diff = new THREE.Vector3();
         diff.subVectors(cut.startHit, cut.endHit);
         var planeNormal = new THREE.Vector3();
         planeNormal.crossVectors(cut.startNormal, diff).normalize();
         let plane = new Plane(cut.startHit, planeNormal);
         dcelMesh.cut(plane)
-        mouse.justReleased= false;
+        const newMeshes =  dcelMesh.break();
+        updateDecl(newMeshes);
+        cut.endHit = null;
+        cut.startHit = null;
+        cut.startNormal = null;
     }
 }
 
@@ -540,12 +603,16 @@ const tick = () =>
     
     // update box
     rotateBox(timeTracker.elapsedTime)
+    for (let boxM of boxMaterials) {
     boxM.uniforms.mIsDragging.value = mouse.end !== null;
     if (boxM.uniforms.mIsDragging.value) {
         boxM.uniforms.mStart.value = mouse.start;
         boxM.uniforms.mEnd.value = mouse.end;
     }
+}
     updateCut();
+    for (let boxM of boxMaterials) {
+        
     if (cut.startHit) {
         boxM.uniforms.startHit.value = cut.startHit;
     }
@@ -557,8 +624,7 @@ const tick = () =>
     }
     boxM.uniforms.c.value = debugObject.color;
     boxM.uniforms.stepVal.value = debugObject.stepVal;
-
-
+}
     // Render scene
     renderer.render(scene, camera)
 
