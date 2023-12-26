@@ -33,6 +33,94 @@ const gltfLoader = new GLTFLoader(loadingManager);
 gltfLoader.setDRACOLoader(dracoLoader);
 dracoLoader.setDecoderPath("./draco/gltf/");
 
+
+/**
+ * DCEL: https://en.wikipedia.org/wiki/Doubly_connected_edge_list
+ */
+class Plane {
+    constructor(position, normal) {
+        this.position = position;
+        this.normal = normal;
+    }
+}
+
+class HalfEdge {
+    constructor(start, end) {
+        this.start = start;
+        this.end = end;
+        this.prev = null;
+        this.next = null;
+        this.twin = null;
+    }
+}
+
+class DcelMesh {
+    getEdge(start, end) {
+        let index = start + this.vertices.length * end;
+        if (!this.edges.has(index)) {
+            return null;
+        }
+        return this.edges.get(index)
+    }
+
+    addEdge(edge) {
+        let index = edge.start + this.vertices.length * edge.end;
+        this.edges.set(index, edge);
+        let twin = this.getEdge(edge.end, edge.start);
+        if (twin) {
+            twin.twin = edge;
+            edge.twin = twin;
+        }
+    }
+
+    constructor(vertices, faces) {
+        this.vertices = vertices;
+        this.edges = new Map();
+        for (let j = 0; j < faces.length; j++) {
+            let face = faces[j]
+            for (let i = 0; i < face.length; i++) {
+                let start = face[i];
+                let end = face[(i + 1) % face.length];
+                this.addEdge(new HalfEdge(start, end));
+            }
+            for (let i = 0; i < face.length; i++) {
+                let curr = face[i];
+                let next1 = face[(i + 1) % face.length];
+                let next2 = face[(i +2) % face.length];
+                let prev = this.getEdge(face[i], face[(i + 1) % face.length]);
+                let next = this.getEdge(face[(i + 1) % face.length],face[(i + 2) % face.length]);
+                prev.next = next;
+                next.prev = prev;
+            }
+        }
+    }
+
+    cut(plane) {
+
+    }
+
+    toVertices() {
+        const traversedEdges = new Map();
+        var indices = [];
+        for (let edge of this.edges.values()) {
+            let index = edge.start + this.vertices.length * edge.end;
+            if (traversedEdges.has(index)) {
+                continue;
+            }
+            traversedEdges.set(index, true);
+            var next = edge.next;
+            while (next.end !== edge.start) {
+                indices.push(edge.start,next.start,next.end);
+                let index = next.start + this.vertices.length * next.end;
+                traversedEdges.set(index, true);
+                next = next.next;
+            }
+        }
+
+        return [new Float32Array(this.vertices), indices];
+    }
+}
+
 /**
  * Load texture
  */
@@ -100,14 +188,9 @@ controls.enableRotate = false;
 /**
  * Mouse tracking
  */
-const raycaster = new THREE.Raycaster(camera.position);
-raycaster.layers.set(1);
 const mouse = {
     start: null,
-    end: null,
-    startHit: null,
-    startNormal: null,
-    endHit: null
+    end: null
 }
 
 const mousePos = (event) => {
@@ -116,23 +199,9 @@ const mousePos = (event) => {
         - ( event.clientY / window.innerHeight ) * 2 + 1
     )
 }
-window.addEventListener( 'pointermove', (event) => {
+window.addEventListener('pointermove', (event) => {
     if (mouse.start) {
-        raycaster.setFromCamera( mouse.start, camera );
-        const intersects = raycaster.intersectObjects( scene.children );
-        if (intersects.length > 0) {
-            mouse.startHit = intersects[0].point.clone();
-            mouse.startNormal = intersects[0].normal.clone();
-        }
         mouse.end = mousePos(event);
-        raycaster.setFromCamera( mouse.end, camera );
-        const intersects2 = raycaster.intersectObjects( scene.children );
-        if (intersects2.length > 0) {
-            mouse.endHit = intersects2[0].point.clone();
-        }
-        console.log(mouse.startHit)
-        console.log(mouse.startNormal)
-        console.log(mouse.endHit)
     }
 } );
 window.addEventListener('pointerdown', (event) => {
@@ -191,12 +260,61 @@ loadingManager.onProgress = (_, itemsLoaded, itemsTotal) =>
         timeline.to(overlayMaterial.uniforms.uMinY, {duration: 0.6, value: 0.5, ease: 'power1.in'})
     }
  };
+/**
+ * Plane cut
+ */
 
+const raycaster = new THREE.Raycaster(camera.position);
+raycaster.layers.set(1);
+const cut = {
+    startHit: null,
+    startNormal: null,
+    endHit: null
+}
+const updateCut = () => {
+    if (mouse.start) {
+        raycaster.setFromCamera( mouse.start, camera );
+        const intersects = raycaster.intersectObjects( scene.children );
+        if (intersects.length > 0) {
+            cut.startHit = intersects[0].point;
+            cut.startNormal = intersects[0].normal;
+        }
+    }
+    
+    if (mouse.end) {
+        raycaster.setFromCamera( mouse.end, camera );
+        const intersects = raycaster.intersectObjects( scene.children );
+        if (intersects.length > 0) {
+            cut.endHit = intersects[0].point;
+        }
+    }
+}
 
 /**
  *  Box
  */
-const boxG = new THREE.BoxGeometry()
+
+const boxGeo = new THREE.BoxGeometry();
+function splitToNChunks(array, len) {
+    let result = [];
+    while(array.length > 0) {
+        result.push(array.splice(0, 3));
+    }
+    return result;
+}
+var vertices = Array.from(boxGeo.attributes.position.array);
+var indices = splitToNChunks(Array.from(boxGeo.index.array), 3);
+var dcelMesh = new DcelMesh(vertices, indices);
+
+let [vertices2, indices2] = dcelMesh.toVertices();
+
+console.log(vertices2);
+console.log(indices2);
+
+const boxG = new THREE.BufferGeometry();
+boxG.setIndex(indices2)
+boxG.setAttribute( 'position', new THREE.BufferAttribute(vertices2, 3))
+boxG.computeBoundingBox();
 const boxM = new THREE.ShaderMaterial({
     vertexShader: crackVertexShader, 
     fragmentShader: crackFragmentShader,
@@ -242,14 +360,15 @@ const tick = () =>
         boxM.uniforms.mStart.value = mouse.start;
         boxM.uniforms.mEnd.value = mouse.end;
     }
-    if (mouse.startHit) {
-        boxM.uniforms.startHit.value = mouse.startHit;
+    updateCut();
+    if (cut.startHit) {
+        boxM.uniforms.startHit.value = cut.startHit;
     }
-    if (mouse.endHit) {
-        boxM.uniforms.endHit.value = mouse.endHit;
+    if (cut.endHit) {
+        boxM.uniforms.endHit.value = cut.endHit;
     }
-    if (mouse.startNormal) {
-        boxM.uniforms.startNormal.value = mouse.startNormal;
+    if (cut.startNormal) {
+        boxM.uniforms.startNormal.value = cut.startNormal;
     }
     boxM.uniforms.c.value = debugObject.color;
     boxM.uniforms.stepVal.value = debugObject.stepVal;
