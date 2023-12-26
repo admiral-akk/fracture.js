@@ -316,7 +316,10 @@ class DcelMesh {
             vertexArray[3*index+1] = vertices[3*vertexIndex+1]
             vertexArray[3*index+2] = vertices[3*vertexIndex+2]
         })
-        return vertexArray;
+        return Array.from(indices.map(vertexIndex => {
+            return new THREE.Vector3(vertices[3*vertexIndex], 
+                vertices[3*vertexIndex+1], vertices[3*vertexIndex+2])
+        }));
     }
 
     toVerticesIndices() {
@@ -504,7 +507,13 @@ const boxDeclMeshes = []
 const addDecl = decl => {
     const boxG = new THREE.BufferGeometry();
     let vertices = decl.toVertices();
-    boxG.setAttribute( 'position', new THREE.BufferAttribute(vertices, 3));
+    const verticesArray = new Float32Array(vertices.length * 3);
+    const averageV = new THREE.Vector3();
+    vertices.forEach(v => averageV.add(v));
+    averageV.multiplyScalar(1. / vertices.length);
+    vertices.forEach(v => v.sub(averageV));
+    vertices.forEach((v, i) => v.toArray(verticesArray, 3*i));
+    boxG.setAttribute( 'position', new THREE.BufferAttribute(verticesArray, 3));
     boxG.computeVertexNormals();
     boxG.computeBoundingBox();
     const material = new THREE.ShaderMaterial({
@@ -524,7 +533,8 @@ const addDecl = decl => {
     })
     boxMaterials.push(material);
     const mesh = new THREE.Mesh(boxG, material);
-    mesh.position.randomDirection();
+    averageV.multiplyScalar(2);
+    mesh.position.set(averageV.x,averageV.y,averageV.z);
     mesh.layers.enable(1);
     scene.add(mesh);
     boxMeshes.push(mesh);
@@ -554,7 +564,7 @@ const cutMesh = plane => {
 }
 
 const rotateBox = (time) => {
-    boxMeshes.forEach(mesh => mesh.setRotationFromEuler(new THREE.Euler(0, time, 0)))
+    //boxMeshes.forEach(mesh => mesh.setRotationFromEuler(new THREE.Euler(0, time, 0)))
 }
 
 /**
