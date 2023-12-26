@@ -65,8 +65,12 @@ class DcelMesh {
         return this.vertices[index].clone();
     }
 
+    index(start, end) {
+        return  start.toString() + "+" + end.toString();
+    }
+
     getEdge(start, end) {
-        let index = start.toString() + "+" + end.toString();
+        let index = this.index(start ,end);
         if (!this.edges.has(index)) {
             return null;
         }
@@ -84,7 +88,7 @@ class DcelMesh {
     }
 
     addEdge(edge) {
-        let index = edge.start.toString() + "+" + edge.end.toString();
+        let index = this.index(edge.start, edge.end);
         this.edges.set(index, edge);
         let twin = this.getEdge(edge.end, edge.start);
         if (twin) {
@@ -196,7 +200,7 @@ class DcelMesh {
         const traversedEdges = new Map();
         var indices = [];
         for (let edge of this.edges.values()) {
-            let index = edge.start + this.vertices.length * edge.end;
+            let index = this.index(edge.start, edge.end);
             if (traversedEdges.has(index)) {
                 continue;
             }
@@ -204,11 +208,12 @@ class DcelMesh {
             var next = edge.next;
             while (next.end !== edge.start) {
                 indices.push(edge.start,next.start,next.end);
-                let index = next.start + this.vertices.length * next.end;
+                let index = this.index(next.start, next.end);
                 traversedEdges.set(index, true);
                 next = next.next;
             }
         }
+        console.log(this.vertices);
         let vertexArray = new Float32Array(this.vertices.length * 3);
         this.vertices.forEach((v, i) => v.toArray(vertexArray, 3*i));
         return [vertexArray, indices];
