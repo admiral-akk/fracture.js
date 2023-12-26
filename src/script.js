@@ -71,14 +71,11 @@ class DcelMesh {
 
     getEdge(start, end) {
         let index = this.index(start ,end);
-        if (!this.edges.has(index)) {
-            return null;
-        }
         return this.edges.get(index)
     }
 
     addVertex(vertex) {
-    let existingIndex =   this.vertices.find(vertex)
+    let existingIndex = this.vertices.findIndex(v => v.equals(vertex))
     if (existingIndex >= 0 ) {
         return existingIndex;
     } else {
@@ -98,22 +95,14 @@ class DcelMesh {
     }
 
     constructor(vertices, faces) {
-        var normalizedVertices = [];
-        var indexRemapping = new Map();
-        for (let i = 0; i < vertices.length; i++) {
-            let vertex = new THREE.Vector3().fromArray(vertices, 3*i)
-            let existingIndex = normalizedVertices.findIndex((v) => {
-                return v.equals(vertex);
-            })
-            if (existingIndex >= 0) {
-                indexRemapping.set(i, existingIndex);
-            } else {
-                indexRemapping.set(i, normalizedVertices.length);
-                normalizedVertices.push(vertex);
-            }
+        this.vertices = [];
+        const indexRemapping = new Map();
+        for (let i = 0; i < vertices.length; i += 3) {
+            let vertex = new THREE.Vector3().fromArray(vertices, i)
+            let index = this.addVertex(vertex)
+            indexRemapping.set(i / 3, index)
         }
-        var remappedFaces = faces.map(face => (face.map(i => indexRemapping.get(i))));
-        this.vertices = normalizedVertices;
+        const remappedFaces = faces.map(face => (face.map(i => indexRemapping.get(i))));
         this.edges = new Map();
         for (let face of remappedFaces) {
             for (let i = 0; i < face.length; i++) {
@@ -131,32 +120,16 @@ class DcelMesh {
     }
 
     cut(plane) {
-        var iterations = 0;
         // Find a cut edge:
         for (let edge of this.edges.values()) {
-            iterations++;
             if (!plane.cuts(this.getVertex(edge.start),this.getVertex(edge.end))) {
                 continue;
             }
-
             var cutEdges = [edge];
             var next = edge.next;
             // edge is cut. Find edges that are going to be cut, in order.
             while (true) {
-                if (iterations >= 100000) {
-                    console.log("ITERATIONS EXCEEDED");
-                    break;
-                }
-                iterations++;
                 while (!plane.cuts(this.getVertex(next.start),this.getVertex(next.end))) {
-                    
-                    if (iterations >= 100000) {
-                        console.log(next);
-                        console.log(cutEdges);
-                        console.log("ITERATIONS EXCEEDED");
-                        break;
-                    }
-                    iterations++;
                     next = next.next;
                 }
                 cutEdges.push(next);
@@ -167,8 +140,6 @@ class DcelMesh {
                 cutEdges.push(next);
                 next = next.next;
             }
-            console.log(next);
-            console.log(cutEdges);
 
             for (let i = 0; i < cutEdges.length; i += 2) {
                 let first = cutEdges[i];
@@ -185,8 +156,6 @@ class DcelMesh {
 
     toVertices() {
         let [vertices, indices] = this.toVerticesIndices();
-        console.log(vertices);
-        console.log(indices)
         let vertexArray = new Float32Array(indices.length * 3);
         indices.forEach((vertexIndex, index) => {
             vertexArray[3*index] = vertices[3*vertexIndex]
@@ -213,7 +182,6 @@ class DcelMesh {
                 next = next.next;
             }
         }
-        console.log(this.vertices);
         let vertexArray = new Float32Array(this.vertices.length * 3);
         this.vertices.forEach((v, i) => v.toArray(vertexArray, 3*i));
         return [vertexArray, indices];
