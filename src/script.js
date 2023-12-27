@@ -451,6 +451,8 @@ window.addEventListener('pointerup', (event) => {
  * Debug
  */
 
+const planeNormal = new THREE.Vector3(0,1,0);
+const planePosition = new THREE.Vector3(0,0,0);
 const debugObject = {
     timeSpeed: 1.0, 
     color: 2., 
@@ -460,14 +462,26 @@ const debugObject = {
     cutY: 1.,
     cutZ: 0.,
      }
+
+const updatePosition = () => {
+    planePosition.set(planeNormal.x,planeNormal.y,planeNormal.z).multiplyScalar(debugObject.cutOffset);
+}
+const updateNormal = () => {
+    planeNormal.set(debugObject.cutX,debugObject.cutY,debugObject.cutZ);
+    if (planeNormal.length() === 0.) {
+        planeNormal.setY(1.)
+    }
+    planeNormal.normalize();
+    updatePosition();
+}
 const gui = new GUI();
 gui.add(debugObject, 'timeSpeed').min(0).max(3).step(0.1);
 gui.add(debugObject, 'color').min(0).max(4).step(1.);
 gui.add(debugObject, 'stepVal').min(-2).max(2).step(0.01);
-gui.add(debugObject, 'cutOffset').min(-1).max(1).step(0.01);
-gui.add(debugObject, 'cutX').min(-1).max(1).step(0.01);
-gui.add(debugObject, 'cutY').min(-1).max(1).step(0.01);
-gui.add(debugObject, 'cutZ').min(-1).max(1).step(0.01);
+gui.add(debugObject, 'cutOffset').min(-1).max(1).step(0.01).onChange(updatePosition);
+gui.add(debugObject, 'cutX').min(-1).max(1).step(0.01).onChange(updateNormal);
+gui.add(debugObject, 'cutY').min(-1).max(1).step(0.01).onChange(updateNormal);
+gui.add(debugObject, 'cutZ').min(-1).max(1).step(0.01).onChange(updateNormal);
 
 /**
  * Cut geometry
@@ -571,7 +585,9 @@ const addDecl = decl => {
             startNormal: {value: new THREE.Vector2()},
             endHit: {value: new THREE.Vector2()},
             c: {value: debugObject.color},
-            stepVal : {value: debugObject.stepVal}
+            stepVal : {value: debugObject.stepVal},
+            planePos: {value: planePosition},
+            planeNormal: {value: planeNormal}
         }
     })
     boxMaterials.push(material);
@@ -625,16 +641,8 @@ const rotateBox = (time) => {
 }
 
 const updatePlane = () => {
-    const normal = new THREE.Vector3(debugObject.cutX,debugObject.cutY,debugObject.cutZ);
-    if (normal.length() === 0.) {
-        normal.setY(1.);
-    }
-    normal.normalize();
-    const position = normal.clone().multiplyScalar(debugObject.cutOffset);
-
-    cutMe.position.set(position.x, position.y, position.z);
-    normal.add(position);
-    cutMe.lookAt(normal)
+    cutMe.position.set(planePosition.x, planePosition.y, planePosition.z);
+    cutMe.lookAt(planePosition.clone().add(planeNormal));   
 }
 
 /**
@@ -709,6 +717,8 @@ const tick = () =>
     updatePlane();
     updateCut();
     for (let boxM of boxMaterials) {
+        boxM.planePos = cutMe.position;
+        boxM.planeNormal = debugObject
         
     if (cut.startHit) {
         boxM.uniforms.startHit.value = cut.startHit;
