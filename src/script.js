@@ -544,9 +544,16 @@ const addDecl = decl => {
     const boxG = new THREE.BufferGeometry();
     let vertices = decl.toVertices();
     const verticesArray = new Float32Array(vertices.length * 3);
+    const normalizedVertices = [];
+    vertices.forEach(v => {
+        if (normalizedVertices.filter(v2 => v.equals(v2)).length === 0) {
+            normalizedVertices.push(v);
+        }
+    });
+    console.log(normalizedVertices);
     const averageV = new THREE.Vector3();
-    vertices.forEach(v => averageV.add(v));
-    averageV.multiplyScalar(1. / vertices.length);
+    normalizedVertices.forEach(v => averageV.add(v));
+    averageV.multiplyScalar(1. / normalizedVertices.length);
     vertices.forEach(v => v.sub(averageV));
     vertices.forEach((v, i) => v.toArray(verticesArray, 3*i));
     boxG.setAttribute( 'position', new THREE.BufferAttribute(verticesArray, 3));
@@ -570,6 +577,7 @@ const addDecl = decl => {
     boxMaterials.push(material);
     const mesh = new THREE.Mesh(boxG, material);
     averageV.multiplyScalar(2);
+    console.log(averageV);
     decl.offset = averageV.clone();
     mesh.position.set(averageV.x,averageV.y,averageV.z);
     mesh.layers.enable(1);
