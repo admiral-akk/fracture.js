@@ -141,8 +141,9 @@ class DcelMesh {
         }
     }
 
-    constructor( facesVertices, isNormalized = false) {
+    constructor(facesVertices, offset = new THREE.Vector3(), isNormalized = false) {
         this.vertices = [];
+        this.offset = offset;
         this.edges = new Map();
 
         for (const face of facesVertices) {
@@ -235,6 +236,7 @@ class DcelMesh {
     }
 
     cut(plane) {
+        plane.position = plane.position.clone().sub(this.offset)
         console.log(Array.from(this.edges.values()).filter(v => v.twin === null));
         console.log(Array.from(this.edges.values()).filter(v => v.next === null));
         console.log(Array.from(this.edges.values()).filter(v => v.prev === null));
@@ -449,12 +451,32 @@ window.addEventListener('pointerup', (event) => {
  * Debug
  */
 
-const debugObject = {timeSpeed: 1.0, color: 2., stepVal: 0.}
+const debugObject = {
+    timeSpeed: 1.0, 
+    color: 2., 
+    stepVal: 0.,
+    cutOffset: 0.,
+    cutX: 0.,
+    cutY: 1.,
+    cutZ: 0.,
+     }
 const gui = new GUI();
 gui.add(debugObject, 'timeSpeed').min(0).max(3).step(0.1);
 gui.add(debugObject, 'color').min(0).max(4).step(1.);
 gui.add(debugObject, 'stepVal').min(-2).max(2).step(0.01);
+gui.add(debugObject, 'cutOffset').min(-1).max(1).step(0.01);
+gui.add(debugObject, 'cutX').min(-1).max(1).step(0.01);
+gui.add(debugObject, 'cutY').min(-1).max(1).step(0.01);
+gui.add(debugObject, 'cutZ').min(-1).max(1).step(0.01);
 
+/**
+ * Cut geometry
+ */
+
+const cutG = new THREE.PlaneGeometry(4, 4);
+const cutM = new THREE.MeshBasicMaterial({wireframe: true})
+const cutMe = new THREE.Mesh(cutG, cutM);
+scene.add(cutMe);
 
 /**
  * Loading overlay
@@ -548,6 +570,7 @@ const addDecl = decl => {
     boxMaterials.push(material);
     const mesh = new THREE.Mesh(boxG, material);
     averageV.multiplyScalar(2);
+    decl.offset = averageV.clone();
     mesh.position.set(averageV.x,averageV.y,averageV.z);
     mesh.layers.enable(1);
     scene.add(mesh);
@@ -556,6 +579,7 @@ const addDecl = decl => {
 }
 
 const updateDecl = newMeshes => {
+    console.log(newMeshes);
     boxMeshes.forEach(v => scene.remove(v));
     boxMeshes.length = 0;
     boxDeclMeshes.length = 0;
@@ -576,9 +600,33 @@ const cutMesh = plane => {
     updateDecl(newMeshes.flat())
     
 }
+const cutMeshUsingPlane = () => {
+    const normal = new THREE.Vector3(debugObject.cutX,debugObject.cutY,debugObject.cutZ)
+    if (normal.length() === 0.) {
+        normal.setY(1.)
+    }
+    normal.normalize();
+    const newPlane = new Plane(cutMe.position.clone(), normal)
+    cutMesh(newPlane);
+}
+debugObject.cutMeshUsingPlane = cutMeshUsingPlane
+gui.add( debugObject, 'cutMeshUsingPlane' ); // Button
 
 const rotateBox = (time) => {
     //boxMeshes.forEach(mesh => mesh.setRotationFromEuler(new THREE.Euler(0, time, 0)))
+}
+
+const updatePlane = () => {
+    const normal = new THREE.Vector3(debugObject.cutX,debugObject.cutY,debugObject.cutZ);
+    if (normal.length() === 0.) {
+        normal.setY(1.);
+    }
+    normal.normalize();
+    const position = normal.clone().multiplyScalar(debugObject.cutOffset);
+
+    cutMe.position.set(position.x, position.y, position.z);
+    normal.add(position);
+    cutMe.lookAt(normal)
 }
 
 /**
@@ -650,6 +698,7 @@ const tick = () =>
         boxM.uniforms.mEnd.value = mouse.end;
     }
 }
+    updatePlane();
     updateCut();
     for (let boxM of boxMaterials) {
         
