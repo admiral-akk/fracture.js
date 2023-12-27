@@ -141,19 +141,25 @@ class DcelMesh {
         }
     }
 
-    constructor(vertices, faces, isNormalized = false) {
+    constructor( facesVertices, isNormalized = false) {
         this.vertices = [];
-        const indexRemapping = new Map();
-        for (let i = 0; i < vertices.length; i += 3) {
-            let vertex = new THREE.Vector3().fromArray(vertices, i)
-            let index = isNormalized ? this.addVertex(vertex) : this.addNormalizedVertex(vertex)
-            indexRemapping.set(i / 3, index)
-        }
-        const remappedFaces = faces.map(face => (face.map(i => indexRemapping.get(i))));
         this.edges = new Map();
-        for (let face of remappedFaces) {
-            this.addFace(face)
+
+        for (const face of facesVertices) {
+            const vIndices = []
+            for (const vertex of face) {
+                let index = isNormalized ? this.addVertex(vertex) : this.addNormalizedVertex(vertex)
+                vIndices.push(index);
+            }
+            this.addFace(vIndices)
         }
+        this.validate()
+    }
+
+    validate() {
+        console.log("Missing next:",Array.from(this.edges.values()).filter(e => e.next === null));
+        console.log("Missing prev:",Array.from(this.edges.values()).filter(e => e.prev === null));
+        console.log("Missing twin:",Array.from(this.edges.values()).filter(e => e.twin === null));
     }
 
     // tries to break the mesh into seperate pieces
@@ -203,7 +209,10 @@ class DcelMesh {
             }
             let vertexArray = new Float32Array(this.vertices.length * 3);
             this.vertices.forEach((v, i) => v.toArray(vertexArray, 3*i));
-            newMeshes.push(new DcelMesh(vertexArray,faces,false));
+            facesVertices = Array.from(faces.map(face => {
+               return  Array.from(face.map(vIndex => this.vertices[vIndex].clone()))
+            }));
+            newMeshes.push(new DcelMesh(facesVertices,false));
         }
 
         return newMeshes;
@@ -498,7 +507,12 @@ function splitToNChunks(array) {
 }
 var vertices = Array.from(boxGeo.attributes.position.array);
 var indices = splitToNChunks(Array.from(boxGeo.index.array), 3);
-var dcelMesh = new DcelMesh(vertices, indices);
+var facesVertices = Array.from(indices.map(face => {
+    return Array.from(face.map(vIndex => {
+        return new THREE.Vector3(vertices[3*vIndex],vertices[3*vIndex+1],vertices[3*vIndex+2])
+    }))
+}))
+var dcelMesh = new DcelMesh( facesVertices);
 
 const boxMaterials = []
 const boxMeshes = []
@@ -612,7 +626,6 @@ const updateCut = () => {
         cut.startNormal = null;
     }
 }
-
 
 /**
  * Animation
