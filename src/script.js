@@ -319,9 +319,8 @@ class DcelMesh {
             next.cross(prev)
             return [e, next.length(), this.getVertex(e.prev.start),this.getVertex(e.start),this.getVertex(e.end)]
         })
-        if (eLength.filter(eL => eL[1] === 0.).length > 0) {
-            console.log(validationName,eLength.filter(eL => eL[1] === 0.))
-            console.log(validationName,eLength.filter(eL => eL[1] === 0.))
+        if (eLength.filter(eL => Math.abs(eL[1]) < epslion).length > 0) {
+            console.log(validationName,eLength.filter(eL =>Math.abs(eL[1]) < epslion))
             throw new Error("Colinear points")
         }
 
