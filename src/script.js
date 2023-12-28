@@ -141,11 +141,9 @@ class DcelMesh {
     deleteEdge(edge) {
         let index = this.index(edge.start, edge.end);
         if (edge.prev && edge.prev.next === edge) {
-            console.log("NEVER")
             edge.prev.next = null;
         } 
         if (edge.next && edge.next.prev === edge) {
-            console.log("NEVER")
             edge.next.prev = null;
         }
         this.edges.delete(index);
@@ -168,18 +166,19 @@ class DcelMesh {
             }
             this.addFace(vIndices)
         }
-        this.validate()
+
+        this.validate("Constructor")
     }
 
-    validate() {
+    validate(validationName) {
         let missingNext = Array.from(this.edges.values()).filter(e => e.next === null);
-        let missingPrev = Array.from(this.edges.values()).filter(e => e.next === null);
-        let missingTwin = Array.from(this.edges.values()).filter(e => e.next === null);
+        let missingPrev = Array.from(this.edges.values()).filter(e => e.prev === null);
+        let missingTwin = Array.from(this.edges.values()).filter(e => e.twin === null);
         if (missingTwin.length > 0 || missingPrev.length > 0 || missingNext.length > 0) {
-            console.log(this)
-            console.log("Missing next:",missingNext);
-            console.log("Missing prev:",missingPrev);
-            console.log("Missing twin:",missingTwin);
+            console.log(validationName,this)
+            console.log(validationName,"Missing next:",missingNext);
+            console.log(validationName,"Missing prev:",missingPrev);
+            console.log(validationName,"Missing twin:",missingTwin);
         }
     }
 
@@ -196,8 +195,8 @@ class DcelMesh {
             let e2 = this.addEdge(new HalfEdge(index, next.start));
             this.chainEdges([prev, e1, e2, next])
             this.deleteEdge(e);
-            this.validate();
         })
+        this.validate("After point insert");
     }
 
     // Ensures that there are edges between all points that sit on the plane.
@@ -252,69 +251,118 @@ class DcelMesh {
                 this.chainEdges([endIn, endStart, startOut]);
             }
         }
+        this.validate("After insert loops");
     }
 
+    // find all edges that are entirely contained within the plane, and insert cuts at the loops.
+    cutLoops(plane) {
+        const edges = Array.from(Array.from(this.edges.values()).filter(
+            e => plane.onPlane(this.getVertex(e.start)) && plane.onPlane(this.getVertex(e.end))
+        ))
 
+        const chains = []
+        while (edges.length) {
+            const chain = [];
+            let mNextE = edges[0];
+            while (mNextE) {
+                chain.push(mNextE);
+                edges.splice(edges.indexOf(mNextE), 1);
+                mNextE = edges.filter(e => e.start === mNextE.end && e.end !== mNextE.start).pop();
+            }
+            chains.push(chain);
+        }
+
+        // make a copy of the edge vertices
+        const chainsWithNewVertex = chains
+            .map(chain => chain
+                .map(e => [e, this.addVertex(this.getVertex(e.start))])
+                )
+                this.validate();
+
+        // replace the old vertices
+        chainsWithNewVertex.forEach(chainWithVert => {
+            const newLoop = chainWithVert.map((ev, i) => {
+                const e = ev[0];
+                const newStart = ev[1];
+                const newEnd = chainWithVert[(i+1) % chainWithVert.length][1];
+                // Need to remove and add the new prev/curr/next;
+                const prev = e.prev;
+                const curr = e;
+                const next = e.next;
+
+                const prevPrev = prev.prev;
+                const nextNext = next.next;
+
+                this.deleteEdge(prev);
+                this.deleteEdge(curr);
+                this.deleteEdge(next);
+
+                const newPrev = this.addEdge(new HalfEdge(prev.start, newStart));
+                const newCurr = this.addEdge(new HalfEdge(newStart,newEnd));
+                const newNext = this.addEdge(new HalfEdge(newEnd,next.end));
+
+                // If we're cutting a triangle, then we've removed all of the edges.
+                if (prevPrev === next) {
+                    this.chainEdges([newNext, newPrev, newCurr, newNext]);
+                } else {
+                    this.chainEdges([prevPrev, newPrev, newCurr, newNext, nextNext]);
+                }
+
+                return this.addEdge(new HalfEdge(newEnd,newStart));
+            }).reverse();
+            newLoop.push(newLoop[0]);
+            this.chainEdges(newLoop);
+        });
+
+        this.validate("Post cut loop");
+    }
+
+    // Gets arrays of edges that are connected
+    edgeClusters() {
+        const edges = Array.from(this.edges.values());
+        const clusters = []
+        while (edges.length) {
+            const queue = [edges[0]]
+            let cluster = [];
+            while (queue.length) {
+                const edge = queue.pop();
+                if (!edges.includes(edge)) {
+                    continue;
+                }
+                cluster.push(edge)
+                edges.splice(edges.indexOf(edge), 1);
+                queue.push(edge.twin, edge.next);
+            }
+            clusters.push(cluster);
+        }
+
+        return clusters;
+    }
 
     // tries to break the mesh into seperate pieces
     break() {
-        return [this];
-        const clusters = []
-        const visitedEdges = []
-        for (let edge of this.edges.values()) {
-            const cluster = []
-            const queue = [[null, edge]]
-            while (queue.length > 0) {
-                const [prev, next] = queue.pop();
-                if (visitedEdges.includes(next)) {
-                    continue;
-                }
-                visitedEdges.push(next);
-                cluster.push(next);
-                queue.push([prev, next.next], [prev, next.twin]);
-            }
-            if (cluster.length > 0) {
-                clusters.push(cluster)
-            }
-        }
+        const clusters = this.edgeClusters()
 
-        if (clusters.length === 1) {
-            return [this];
-        }
-        
-        var newMeshes = []
-
-        for (let cluster of clusters) {
-            const visitedEdges = []
+        // generate the faces for each cluster
+        const clusteredFaces = clusters.map(cluster => {
             const faces = []
-            for (let edge of cluster) {
-                if (visitedEdges.includes(edge)) {
-                    continue;
+            while (cluster.length) {
+                let edge = cluster[0];
+                const face = [];
+                while (!face.includes(edge)) {
+                    face.push(edge);
+                    edge = edge.next;
+                    cluster.splice(cluster.indexOf(edge), 1);
                 }
-                visitedEdges.push(edge);
-                var next = edge.next;
-                const face = [edge.start]
-                var i = 0;
-                while (next !== edge) {
-                    visitedEdges.push(next);
-                    face.push(next.start);
-                    next = next.next;
-                    i++;
-                    if (i > 100) {
-                        return;
-                    }
-                }
-                faces.push(face)
+                faces.push(Array.from(face.map(e => this.getVertex(e.start))));
             }
-            let vertexArray = new Float32Array(this.vertices.length * 3);
-            this.vertices.forEach((v, i) => v.toArray(vertexArray, 3*i));
-            facesVertices = Array.from(faces.map(face => {
-               return  Array.from(face.map(vIndex => this.vertices[vIndex].clone()))
-            }));
-            newMeshes.push(new DcelMesh(facesVertices,false));
-        }
+            return faces;
+        })
 
-        return newMeshes;
+        // generate a dcel mesh for each
+        let meshes = clusteredFaces.map(faces => new DcelMesh(faces));
+        
+        return meshes;
     }
 
     chainEdges(edges) {
@@ -340,96 +388,7 @@ class DcelMesh {
     cut(plane) {
         this.insertPoints(plane);
         this.insertLoops(plane);
-        return;
-        plane.position = plane.position.clone().sub(this.offset)
-        console.log(Array.from(this.edges.values()).filter(v => v.twin === null));
-        console.log(Array.from(this.edges.values()).filter(v => v.next === null));
-        console.log(Array.from(this.edges.values()).filter(v => v.prev === null));
-        // Find a cut edge:
-        for (let edge of this.edges.values()) {
-            if (!plane.cuts(this.getVertex(edge.start),this.getVertex(edge.end))) {
-                continue;
-            }
-            var cutEdges = [edge];
-            var next = edge.next;
-            // edge is cut. Find edges that are going to be cut, in order.
-            while (true) {
-                while (!plane.cuts(this.getVertex(next.start),this.getVertex(next.end))) {
-                    next = next.next;
-                }
-                if (cutEdges.includes(next)) {
-                    console.log("repeat edge: ", cutEdges, edge)
-                }
-                cutEdges.push(next);
-                next = next.twin;
-                if (next === edge) {
-                    break;
-                }
-                cutEdges.push(next);
-                next = next.next;
-            }
-
-            // each pair of edges belongs to the same face. 
-            // go through each pair, split them, add two new half edges, and then store them
-            var leftPoints = []
-            var rightPoints = []
-            for (let i = 0; i < cutEdges.length; i += 2) {
-                const vertex = plane.intersection(this.getVertex(cutEdges[i].start),
-                this.getVertex(cutEdges[i].end));
-                leftPoints.push(this.addVertex(vertex))
-                rightPoints.push(this.addVertex(vertex))
-            }
-            
-            for (let i = 0; i < cutEdges.length; i += 2) {
-                let first = cutEdges[i];
-                let second = cutEdges[(i+1) % cutEdges.length];
-
-                const firstLeftIndex = leftPoints[(i / 2) % leftPoints.length]
-                const secondLeftIndex = leftPoints[(i / 2 + 1) % leftPoints.length]
-
-                const leftStart = this.addEdge(new HalfEdge(first.start, firstLeftIndex))
-                const leftEdge = this.addEdge(new HalfEdge(firstLeftIndex, secondLeftIndex))
-                const leftEnd = this.addEdge(new HalfEdge(secondLeftIndex, second.end))
-
-                if (first.prev === second){ 
-                    first.prev = null;
-                    second.next = null;
-                    this.chainEdges([leftEnd, leftStart, leftEdge, leftEnd])
-                } else {
-                    console.log('first:' ,first)
-                    console.log('second:' ,second)
-                    this.chainEdges([first.prev, leftStart, leftEdge, leftEnd, second.next])
-                }
-
-                const firstRightIndex = rightPoints[(i / 2) % rightPoints.length]
-                const secondRightIndex = rightPoints[(i / 2+1) % rightPoints.length]
-
-                const rightStart = this.addEdge(new HalfEdge(second.start, secondRightIndex))
-                const rightEdge = this.addEdge(new HalfEdge(secondRightIndex, firstRightIndex))
-                const rightEnd = this.addEdge(new HalfEdge(firstRightIndex, first.end))
-
-                if (second.prev === first) {
-                    first.next = null;
-                    second.prev = null;
-                    this.chainEdges([rightEnd, rightStart, rightEdge, rightEnd])
-                } else {
-                    console.log('cut length: ', cutEdges)
-                    console.log('first:' ,first)
-                    console.log('second:' ,second)
-                    this.chainEdges([second.prev, rightStart, rightEdge, rightEnd, first.next])
-                }
-            }
-
-            for (let edge of cutEdges) {
-                this.deleteEdge(edge);
-            }
-            this.addFace(leftPoints.reverse())
-            this.addFace(rightPoints)
-            console.log(Array.from(this.edges.values()).filter(v => v.twin === null));
-            console.log(Array.from(this.edges.values()).filter(v => v.next === null));
-            console.log(Array.from(this.edges.values()).filter(v => v.prev === null));
-            break;
-        }
+        this.cutLoops(plane);
     }
 
     toVertices() {
@@ -455,6 +414,7 @@ class DcelMesh {
             }
             traversedEdges.push(edge);
             var next = edge.next;
+            // This does not handle colinear edges at all.
             while (!traversedEdges.includes(next)) {
                 indices.push(edge.start,next.start,next.end);
                 traversedEdges.push(next);
@@ -680,7 +640,6 @@ const addDecl = decl => {
     const averageV = new THREE.Vector3();
     normalizedVertices.forEach(v => averageV.add(v));
     averageV.multiplyScalar(1. / normalizedVertices.length);
-    averageV.set(0,0,0);
     vertices.forEach(v => v.sub(averageV));
     vertices.forEach((v, i) => v.toArray(verticesArray, 3*i));
     boxG.setAttribute('position', new THREE.BufferAttribute(verticesArray, 3));
@@ -705,7 +664,6 @@ const addDecl = decl => {
     })
     boxMaterials.push(material);
     const mesh = new THREE.Mesh(boxG, material);
-    averageV.set(0,0,0);
     averageV.multiplyScalar(2);
     decl.offset = averageV.clone();
     mesh.position.set(averageV.x,averageV.y,averageV.z);
@@ -749,9 +707,9 @@ debugObject.cutMeshUsingPlane = cutMeshUsingPlane
 gui.add( debugObject, 'cutMeshUsingPlane' ); // Button
 
 cutMeshUsingPlane();
-//debugObject.cutX = 0.75;
+debugObject.cutX = 0.75;
 updateNormal();
-//cutMeshUsingPlane();
+cutMeshUsingPlane();
 
 const rotateBox = (time) => {
     //boxMeshes.forEach(mesh => mesh.setRotationFromEuler(new THREE.Euler(0, time, 0)))
@@ -797,11 +755,6 @@ const updateCut = () => {
         if (!cut.endHit || !cut.startHit) {
             return;
         }
-        var diff = new THREE.Vector3();
-        diff.subVectors(cut.startHit, cut.endHit);
-        var planeNormal = new THREE.Vector3();
-        planeNormal.crossVectors(cut.startNormal, diff).normalize();
-        cutMesh(new Plane(cut.startHit, planeNormal))
         cut.endHit = null;
         cut.startHit = null;
         cut.startNormal = null;
