@@ -12,6 +12,8 @@ uniform vec2 mEnd;
 uniform vec3 startHit;
 uniform vec3 endHit;
 uniform vec3 startNormal;
+uniform vec3 planePos;
+uniform vec3 planeNormal;
 uniform float c;
 
 // Transformation described here: https://stackoverflow.com/questions/29879216/preparing-model-view-and-projection-matrices-for-glsl
@@ -23,8 +25,8 @@ void main() {
      vec4 objectCenter = modelMatrix * vec4(0.,0.,0.,1.);
      vec3 mean = normalize(endHit.xyz+startHit.xyz - 2.*objectCenter.xyz);
      vec3 crossVec = normalize(cross(endHit.xyz - startHit.xyz, mean.xyz ));
-     vec3 deltaWorld = worldPos.xyz - startHit.xyz;
-     lineDist2 = dot(deltaWorld, normalize(crossVec));
+     vec3 deltaWorld = worldPos.xyz - planePos.xyz;
+     lineDist2 = dot(deltaWorld, normalize(planeNormal));
 
     // Applies view (moves it relative to camera position/orientation)
      viewPos = viewMatrix * worldPos;

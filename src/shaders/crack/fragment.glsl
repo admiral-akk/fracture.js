@@ -23,19 +23,7 @@ void main()
    gl_FragColor = worldPos;
 
     } else if (c <= 2.) {
-        if (mIsDragging) {
-            vec2 mouseDir = normalize(mEnd - mStart);
-            
-            vec2 delta = vec2(viewPos.x, viewPos.y) - mStart;
-            vec2 orthogonal = delta-dot(delta,mouseDir) * mouseDir;
-            float crossVal = orthogonal.x * mouseDir.y - mouseDir.x * orthogonal.y;
-            float dist = length(delta-dot(delta,mouseDir) * mouseDir);
-            
         gl_FragColor = vec4(step(lineDist2, 0.), step(-lineDist2, 0.), 0., 1.);
-        } else {
-
-        gl_FragColor = vec4(1., 0., 0., 1.);
-        }
 
     } else if (c <= 3.) {
     gl_FragColor = vec4(step(projectionPos.x, stepVal) , step(projectionPos.y, stepVal), 0., 1.);
