@@ -454,9 +454,8 @@ class DcelMesh {
     }
   }
 
-  constructor(facesVertices, offset = new THREE.Vector3()) {
+  constructor(facesVertices) {
     this.vertices = [];
-    this.offset = offset;
     this.edges = new Map();
 
     for (const face of facesVertices) {
@@ -474,13 +473,6 @@ class DcelMesh {
     this.checkDuplicatePoints("Constructor");
     this.validate("Constructor");
     this.validateNoColinear("Constructor");
-
-    const average = this.vertices
-      .reduce((acc, v) => acc.add(v), new THREE.Vector3())
-      .multiplyScalar(1 / this.vertices.length);
-
-    this.offset.add(average);
-    this.vertices.forEach((v) => v.sub(average));
   }
 
   validatePrev(validationName) {
@@ -799,8 +791,12 @@ class DcelMesh {
   break() {
     const clusters = this.edgeClusters();
 
+    if (clusters.length === 1) {
+      return null;
+    }
+
     // generate the faces for each cluster
-    const clusteredFaces = clusters.map((cluster) => {
+    return clusters.map((cluster) => {
       const faces = [];
       while (cluster.length) {
         let edge = cluster[0];
@@ -814,14 +810,6 @@ class DcelMesh {
       }
       return faces;
     });
-
-    if (clusters.length === 1) {
-      return [this];
-    }
-    // generate a dcel mesh for each
-    return clusteredFaces.map(
-      (faces) => new DcelMesh(faces, this.offset.clone())
-    );
   }
 
   chainEdges(edges) {
@@ -842,11 +830,9 @@ class DcelMesh {
   }
 
   cut(plane) {
-    plane.position = plane.position.sub(this.offset);
     this.insertPoints(plane);
     this.insertLoops(plane);
     this.cutLoops(plane);
-    plane.position = plane.position.add(this.offset);
   }
 
   toVertices() {
@@ -947,7 +933,7 @@ const makeMesh = (offset, decl) => {
   mesh.decl = decl;
   mesh.layers.enable(1);
   scene.add(mesh);
-  mesh.position.set(decl.offset.x, decl.offset.y, decl.offset.z);
+  mesh.position.set(offset.x, offset.y, offset.z);
   boxMeshes.push(mesh);
   return mesh;
 };
@@ -955,15 +941,16 @@ const makeMesh = (offset, decl) => {
 makeMesh(new THREE.Vector3(), boxDecl());
 
 const cutMesh = (mesh, plane) => {
+  plane.position.sub(mesh.position);
   mesh.decl.cut(plane);
-  const newDecl = mesh.decl.break();
-  if (newDecl.length > 1) {
-    boxMeshes.splice(boxMeshes.indexOf(mesh), 1);
-    newDecl.forEach((decl) => {
-      makeMesh(mesh.position.clone(), decl);
-    });
-    scene.remove(mesh);
+  plane.position.add(mesh.position);
+  const mFaces = mesh.decl.break();
+  if (!mFaces) {
+    return;
   }
+  mFaces.forEach((face) => makeMesh(mesh.position.clone(), new DcelMesh(face)));
+  boxMeshes.splice(boxMeshes.indexOf(mesh), 1);
+  scene.remove(mesh);
 };
 
 const updatePlane = () => {
@@ -1078,8 +1065,8 @@ const tick = () => {
   updateCut();
 
   for (let boxM of boxMeshes.map((m) => m.material)) {
-    boxM.planePos = cutMe.position;
-    boxM.planeNormal = debugObject;
+    boxM.planePos = planePosition;
+    boxM.planeNormal = planeNormal;
   }
 
   // Render scene
