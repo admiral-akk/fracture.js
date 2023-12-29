@@ -39,6 +39,7 @@ const sizes = {
 };
 const canvas = document.querySelector("canvas.webgl");
 const renderer = new THREE.WebGLRenderer({ canvas });
+const listener = new THREE.AudioListener();
 renderer.setClearColor("#201919");
 const scene = new THREE.Scene();
 var stats = new Stats();
@@ -54,7 +55,8 @@ camera.position.y = 3;
 camera.position.z = 3;
 scene.add(camera);
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableRotate = false;
+controls.enabled = false;
+camera.add(listener);
 
 /**
  * Mouse tracking
@@ -164,6 +166,7 @@ window.addEventListener("pointerup", (event) => {
     return;
   }
   if (event.target.className === "webgl") {
+    playSound();
     const posNorm = calculatePlane();
     updatePlane(posNorm[0], posNorm[1]);
     cutMeshUsingPlane();
@@ -179,13 +182,16 @@ window.addEventListener("pointerup", (event) => {
  * Debug
  */
 
-const planeNormal = new THREE.Vector3(0, 1, 0);
 const debugObject = {
   timeSpeed: 1.0,
+  cameraControl: false,
 };
 
 const gui = new GUI();
 gui.add(debugObject, "timeSpeed").min(0).max(3).step(0.1);
+gui.add(debugObject, "cameraControl").onChange(() => {
+  controls.enabled = debugObject.cameraControl;
+});
 
 /**
  * Loader Setup
@@ -195,9 +201,29 @@ const loadingManager = new THREE.LoadingManager();
 const textureLoader = new THREE.TextureLoader(loadingManager);
 const dracoLoader = new DRACOLoader(loadingManager);
 const gltfLoader = new GLTFLoader(loadingManager);
+const audioLoader = new THREE.AudioLoader(loadingManager);
 gltfLoader.setDRACOLoader(dracoLoader);
 dracoLoader.setDecoderPath("./draco/gltf/");
+
 const matcapTexture = textureLoader.load("./matcap.jpg");
+const sounds = [];
+const buffers = [];
+const soundCount = 7;
+
+for (let i = 0; i < soundCount; i++) {
+  audioLoader.load(`swoosh0${i + 1}.mp3`, function (buffer) {
+    buffers.push(buffer);
+  });
+}
+
+const playSound = () => {
+  let sound = sounds.filter((s) => !s.isPlaying).pop();
+  if (!sound) {
+    sound = new THREE.Audio(listener);
+  }
+  sound.setBuffer(buffers[Math.floor(Math.random() * 10000) % buffers.length]);
+  sound.play();
+};
 
 /**
  * Window size
