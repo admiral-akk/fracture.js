@@ -83,6 +83,10 @@ gui.add(debugObject, "cutZ").min(-1).max(1).step(0.01).onChange(updateNormal);
 /**
  * Core objects
  */
+const sizes = {
+  width: window.innerWidth,
+  height: window.innerHeight,
+};
 const canvas = document.querySelector("canvas.webgl");
 const renderer = new THREE.WebGLRenderer({ canvas });
 renderer.setClearColor("#201919");
@@ -90,6 +94,16 @@ const scene = new THREE.Scene();
 var stats = new Stats();
 stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
 document.body.appendChild(stats.dom);
+
+/**
+ * Setup camera
+ */
+const camera = new THREE.PerspectiveCamera(75, sizes.width / sizes.height);
+camera.position.x = 3;
+camera.position.y = 3;
+camera.position.z = 3;
+scene.add(camera);
+const controls = new OrbitControls(camera, renderer.domElement);
 
 /**
  * Loader Setup
@@ -101,6 +115,96 @@ const dracoLoader = new DRACOLoader(loadingManager);
 const gltfLoader = new GLTFLoader(loadingManager);
 gltfLoader.setDRACOLoader(dracoLoader);
 dracoLoader.setDecoderPath("./draco/gltf/");
+
+/**
+ * Window size
+ */
+const updateSize = () => {
+  sizes.width = window.innerWidth;
+  sizes.height = window.innerHeight;
+
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+
+  // Render
+  renderer.setSize(sizes.width, sizes.height);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+};
+updateSize();
+window.addEventListener("resize", updateSize);
+window.addEventListener("orientationchange", updateSize);
+window.addEventListener("dblclick", (event) => {
+  if (event.target.className !== "webgl") {
+    return;
+  }
+  const fullscreenElement =
+    document.fullscreenElement || document.webkitFullscreenElement;
+
+  if (fullscreenElement) {
+    document.exitFullscreen();
+  } else {
+    canvas.requestFullscreen();
+  }
+});
+
+/**
+ * Loading overlay
+ */
+const overlayGeometry = new THREE.PlaneGeometry(2, 2, 1, 1);
+const overlayMaterial = new THREE.ShaderMaterial({
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.NormalBlending,
+  vertexShader: overlayVertexShader,
+  fragmentShader: overlayFragmentShader,
+  uniforms: {
+    uMinY: { value: 0.0 },
+    uWidthY: { value: 0.005 },
+    uMaxX: { value: 0.0 },
+  },
+});
+const overlay = new THREE.Mesh(overlayGeometry, overlayMaterial);
+scene.add(overlay);
+
+/**
+ * Loading Animation
+ */
+let progressRatio = 0.0;
+let timeTracker = { enabled: false, elapsedTime: 0.0 };
+const updateProgress = (progress) => {
+  progressRatio = Math.max(progress, progressRatio);
+  gsap.to(overlayMaterial.uniforms.uMaxX, {
+    duration: 1,
+    value: progressRatio,
+  });
+  if (progressRatio == 1) {
+    const timeline = gsap.timeline();
+    timeline.to(overlayMaterial.uniforms.uWidthY, {
+      duration: 0.2,
+      delay: 1.0,
+      value: 0.01,
+      ease: "power1.inOut",
+    });
+    timeline.to(overlayMaterial.uniforms.uWidthY, {
+      duration: 0.2,
+      value: 0.0,
+      ease: "power1.in",
+    });
+    timeline.set(timeTracker, { enabled: true });
+    timeline.to(overlayMaterial.uniforms.uMinY, {
+      duration: 0.6,
+      value: 0.5,
+      ease: "power1.in",
+    });
+  }
+};
+
+if (loadingManager.itemsTotal > 0) {
+  loadingManager.onProgress = (_, itemsLoaded, itemsTotal) =>
+    updateProgress(itemsLoaded / itemsTotal);
+} else {
+  updateProgress(1);
+}
 
 /**
  * DCEL: https://en.wikipedia.org/wiki/Doubly_connected_edge_list
@@ -542,6 +646,7 @@ class DcelMesh {
           .pop();
 
         if (!face) {
+          console.log(face);
           console.log(loop);
           console.log(loop.map((i) => this.getVertex(i)));
           console.log(edge);
@@ -786,63 +891,6 @@ class DcelMesh {
 }
 
 /**
- * Window size
- */
-const sizes = {
-  width: window.innerWidth,
-  height: window.innerHeight,
-};
-renderer.setSize(sizes.width, sizes.height);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
-window.addEventListener("resize", () => {
-  sizes.width = window.innerWidth;
-  sizes.height = window.innerHeight;
-
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-
-  // Render
-  renderer.setSize(sizes.width, sizes.height);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-});
-
-if (window.screen && window.screen.orientation) {
-  window.screen.orientation.onchange = () => {
-    sizes.width = window.innerWidth;
-    sizes.height = window.innerHeight;
-
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-
-    // Render
-    renderer.setSize(sizes.width, sizes.height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  };
-}
-
-window.addEventListener("dblclick", () => {
-  const fullscreenElement =
-    document.fullscreenElement || document.webkitFullscreenElement;
-
-  if (fullscreenElement) {
-    document.exitFullscreen();
-  } else {
-    canvas.requestFullscreen();
-  }
-});
-
-/**
- * Setup camera
- */
-const camera = new THREE.PerspectiveCamera(75, sizes.width / sizes.height);
-camera.position.x = 3;
-camera.position.y = 3;
-camera.position.z = 3;
-scene.add(camera);
-const controls = new OrbitControls(camera, renderer.domElement);
-
-/**
  * Cut geometry
  */
 
@@ -852,68 +900,10 @@ const cutMe = new THREE.Mesh(cutG, cutM);
 scene.add(cutMe);
 
 /**
- * Loading overlay
- */
-const overlayGeometry = new THREE.PlaneGeometry(2, 2, 1, 1);
-const overlayMaterial = new THREE.ShaderMaterial({
-  transparent: true,
-  depthWrite: false,
-  blending: THREE.NormalBlending,
-  vertexShader: overlayVertexShader,
-  fragmentShader: overlayFragmentShader,
-  uniforms: {
-    uMinY: { value: 0.0 },
-    uWidthY: { value: 0.005 },
-    uMaxX: { value: 0.0 },
-  },
-});
-const overlay = new THREE.Mesh(overlayGeometry, overlayMaterial);
-scene.add(overlay);
-
-/**
- * Loading Animation
- */
-let progressRatio = 0.0;
-let timeTracker = { enabled: false, elapsedTime: 0.0 };
-const updateProgress = (progress) => {
-  progressRatio = Math.max(progress, progressRatio);
-  gsap.to(overlayMaterial.uniforms.uMaxX, {
-    duration: 1,
-    value: progressRatio,
-  });
-  if (progressRatio == 1) {
-    const timeline = gsap.timeline();
-    timeline.to(overlayMaterial.uniforms.uWidthY, {
-      duration: 0.2,
-      delay: 1.0,
-      value: 0.01,
-      ease: "power1.inOut",
-    });
-    timeline.to(overlayMaterial.uniforms.uWidthY, {
-      duration: 0.2,
-      value: 0.0,
-      ease: "power1.in",
-    });
-    timeline.set(timeTracker, { enabled: true });
-    timeline.to(overlayMaterial.uniforms.uMinY, {
-      duration: 0.6,
-      value: 0.5,
-      ease: "power1.in",
-    });
-  }
-};
-
-if (loadingManager.itemsTotal > 0) {
-  loadingManager.onProgress = (_, itemsLoaded, itemsTotal) =>
-    updateProgress(itemsLoaded / itemsTotal);
-} else {
-  updateProgress(1);
-}
-
-/**
  *  Box
  */
 
+const boxMeshes = [];
 const boxDecl = () => {
   const boxGeo = new THREE.BoxGeometry();
   function splitToNChunks(array) {
@@ -941,7 +931,6 @@ const boxDecl = () => {
   return new DcelMesh(facesVertices);
 };
 
-const boxMeshes = [];
 const makeMesh = (offset, decl) => {
   const boxG = new THREE.BufferGeometry();
   const vertices = decl.toVertices();
@@ -983,6 +972,12 @@ const cutMesh = (mesh, plane) => {
     scene.remove(mesh);
   }
 };
+
+const updatePlane = () => {
+  cutMe.position.set(planePosition.x, planePosition.y, planePosition.z);
+  cutMe.lookAt(planePosition.clone().add(planeNormal));
+};
+
 const cutMeshUsingPlane = () => {
   const normal = new THREE.Vector3(
     debugObject.cutX,
@@ -993,6 +988,7 @@ const cutMeshUsingPlane = () => {
     normal.setY(1);
   }
   normal.normalize();
+  updatePlane();
   const newPlane = new Plane(cutMe.position.clone(), normal);
   const meshQueue = Array.from(boxMeshes);
   while (meshQueue.length) {
@@ -1002,26 +998,33 @@ const cutMeshUsingPlane = () => {
 debugObject.cutMeshUsingPlane = cutMeshUsingPlane;
 gui.add(debugObject, "cutMeshUsingPlane"); // Button
 
-const randomCutCount = 1;
+const randomCutCount = 0;
 
 const randomCut = () => {
+  const cutX = debugObject.cutX;
+  const cutY = debugObject.cutY;
+  const cutZ = debugObject.cutZ;
+  const cutOffset = debugObject.cutOffset;
   debugObject.cutX = Math.random() - 0.5;
   debugObject.cutY = Math.random() - 0.5;
   debugObject.cutZ = Math.random() - 0.5;
   debugObject.cutOffset = 2 * (Math.random() - 0.5);
   updateNormal();
   cutMeshUsingPlane();
+  debugObject.cutX = cutX;
+  debugObject.cutY = cutY;
+  debugObject.cutZ = cutZ;
+  debugObject.cutOffset = cutOffset;
+  updateNormal();
+  updatePlane();
 };
+
+debugObject.randomCut = randomCut;
+gui.add(debugObject, "randomCut"); // Button
 
 for (let i = 0; i < randomCutCount; i++) {
   randomCut();
 }
-
-const updatePlane = () => {
-  cutMe.position.set(planePosition.x, planePosition.y, planePosition.z);
-  cutMe.lookAt(planePosition.clone().add(planeNormal));
-};
-
 /**
  * Plane cut
  */
