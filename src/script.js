@@ -910,7 +910,11 @@ const boxDecl = () => {
   return new DcelMesh(facesVertices);
 };
 
-const makeMesh = (offset, decl) => {
+const makeMesh = (
+  decl,
+  pos = new THREE.Vector3(),
+  targetPos = new THREE.Vector3()
+) => {
   const boxG = new THREE.BufferGeometry();
   const vertices = decl.toVertices();
   const verticesArray = new Float32Array(vertices.length * 3);
@@ -933,12 +937,20 @@ const makeMesh = (offset, decl) => {
   mesh.decl = decl;
   mesh.layers.enable(1);
   scene.add(mesh);
-  mesh.position.set(offset.x, offset.y, offset.z);
+  mesh.position.set(pos.x, pos.y, pos.z);
+  mesh.targetPos = targetPos.clone();
+  gsap.to(mesh.position, {
+    duration: 4.6,
+    x: targetPos.x,
+    y: targetPos.y,
+    z: targetPos.z,
+    ease: "elastic.out",
+  });
   boxMeshes.push(mesh);
   return mesh;
 };
 
-makeMesh(new THREE.Vector3(), boxDecl());
+makeMesh(boxDecl());
 
 const cutMesh = (mesh, plane) => {
   plane.position.sub(mesh.position);
@@ -961,13 +973,14 @@ const cutMesh = (mesh, plane) => {
       .multiplyScalar(1 / dedupVertices.length);
     faces.forEach((face) => face.forEach((v) => v.sub(average)));
     const distanceScale = 1.5;
+    const pos = mesh.targetPos
+      .clone()
+      .multiplyScalar(1 / distanceScale)
+      .add(average);
     makeMesh(
-      mesh.position
-        .clone()
-        .multiplyScalar(1 / distanceScale)
-        .add(average)
-        .multiplyScalar(distanceScale),
-      new DcelMesh(faces)
+      new DcelMesh(faces),
+      mesh.position.clone(),
+      pos.clone().multiplyScalar(distanceScale)
     );
   });
   boxMeshes.splice(boxMeshes.indexOf(mesh), 1);
