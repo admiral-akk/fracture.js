@@ -948,7 +948,28 @@ const cutMesh = (mesh, plane) => {
   if (!mFaces) {
     return;
   }
-  mFaces.forEach((face) => makeMesh(mesh.position.clone(), new DcelMesh(face)));
+  mFaces.forEach((faces) => {
+    console.log(faces);
+    const vertices = faces.flat();
+    const dedupVertices = vertices.filter(
+      (v, i) =>
+        vertices.filter((v2, j) => j < i && v.distanceTo(v2) < epslion)
+          .length === 0
+    );
+    const average = dedupVertices
+      .reduce((acc, v) => acc.add(v), new THREE.Vector3())
+      .multiplyScalar(1 / dedupVertices.length);
+    faces.forEach((face) => face.forEach((v) => v.sub(average)));
+    const distanceScale = 1.5;
+    makeMesh(
+      mesh.position
+        .clone()
+        .multiplyScalar(1 / distanceScale)
+        .add(average)
+        .multiplyScalar(distanceScale),
+      new DcelMesh(faces)
+    );
+  });
   boxMeshes.splice(boxMeshes.indexOf(mesh), 1);
   scene.remove(mesh);
 };
