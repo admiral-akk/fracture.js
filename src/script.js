@@ -269,7 +269,7 @@ class DcelMesh {
         }
     }
 
-    constructor(facesVertices, offset = new THREE.Vector3(), isNormalized = false) {
+    constructor(facesVertices, offset = new THREE.Vector3()) {
         this.vertices = [];
         this.offset = offset;
         this.edges = new Map();
@@ -277,7 +277,7 @@ class DcelMesh {
         for (const face of facesVertices) {
             const vIndices = []
             for (const vertex of face) {
-                let index = isNormalized ? this.addVertex(vertex) : this.addNormalizedVertex(vertex)
+                let index = this.addNormalizedVertex(vertex)
                 vIndices.push(index);
             }
             this.addFace(vIndices)
@@ -289,6 +289,13 @@ class DcelMesh {
         this.checkDuplicatePoints("Constructor");
         this.validate("Constructor")
         this.validateNoColinear("Constructor")
+
+        const average = this.vertices.reduce((acc, v) => acc.add(v), new THREE.Vector3()).multiplyScalar(1. / this.vertices.length);
+
+        this.offset.add(average);
+        this.vertices.forEach(v => v.sub(average));
+        console.log("this.vertices",this.vertices);
+        console.log("Array.from(this.edges.values())",Array.from(this.edges.values()));
     }
 
     validatePrev(validationName) {
@@ -575,10 +582,11 @@ class DcelMesh {
             return faces;
         })
 
+        if (clusters.length === 1) {
+            return [this];
+        }
         // generate a dcel mesh for each
-        let meshes = clusteredFaces.map(faces => new DcelMesh(faces));
-        
-        return meshes;
+        return clusteredFaces.map(faces => new DcelMesh(faces, this.offset.clone()));
     }
 
     chainEdges(edges) {
@@ -597,10 +605,7 @@ class DcelMesh {
     }
 
     cut(plane) {
-        console.log("planePos before:",plane.position.clone())
         plane.position = plane.position.sub(this.offset)
-        console.log("planePos:",plane.position.clone())
-        console.log("offset:",this.offset.clone())
         this.insertPoints(plane);
         this.insertLoops(plane);
         this.cutLoops(plane);
@@ -609,16 +614,11 @@ class DcelMesh {
 
     toVertices() {
         let [vertices, indices] = this.toVerticesIndices();
-        let vertexArray = new Float32Array(indices.length * 3);
-        indices.forEach((vertexIndex, index) => {
-            vertexArray[3*index] = vertices[3*vertexIndex]
-            vertexArray[3*index+1] = vertices[3*vertexIndex+1]
-            vertexArray[3*index+2] = vertices[3*vertexIndex+2]
-        })
-        return Array.from(indices.map(vertexIndex => {
-            return new THREE.Vector3(vertices[3*vertexIndex], 
-                vertices[3*vertexIndex+1], vertices[3*vertexIndex+2])
-        }));
+        console.log("vertices", vertices);
+        console.log("indices", indices);
+        return indices.map(vertexIndex => new THREE.Vector3(
+            vertices[3*vertexIndex],vertices[3*vertexIndex+1],vertices[3*vertexIndex+2]
+        ));
     }
 
     toVerticesIndices() {
@@ -639,6 +639,8 @@ class DcelMesh {
         }
         let vertexArray = new Float32Array(this.vertices.length * 3);
         this.vertices.forEach((v, i) => v.toArray(vertexArray, 3*i));
+        console.log("this.vertices", this.vertices)
+        console.log("indices", indices)
         return [vertexArray, indices];
     }
 }
@@ -822,43 +824,33 @@ loadingManager.onProgress = (_, itemsLoaded, itemsTotal) =>
  *  Box
  */
 
-const boxGeo = new THREE.BoxGeometry();
-function splitToNChunks(array) {
-    let result = [];
-    while(array.length > 0) {
-        result.push(array.splice(0, 3));
-    }
-    return result;
-}
-var vertices = Array.from(boxGeo.attributes.position.array);
-var indices = splitToNChunks(Array.from(boxGeo.index.array), 3);
-var facesVertices = Array.from(indices.map(face => {
-    return Array.from(face.map(vIndex => {
-        return new THREE.Vector3(vertices[3*vIndex],vertices[3*vIndex+1],vertices[3*vIndex+2])
-    }))
-}))
-var dcelMesh = new DcelMesh( facesVertices);
-
-const boxMaterials = []
-const boxMeshes = []
-const boxDeclMeshes = []
-
-const addDecl = decl => {
-    const boxG = new THREE.BufferGeometry();
-    let vertices = decl.toVertices();
-    const verticesArray = new Float32Array(vertices.length * 3);
-    const normalizedVertices = [];
-    vertices.forEach(v => {
-        if (normalizedVertices.filter(v2 => v.equals(v2)).length === 0) {
-            normalizedVertices.push(v);
+const boxDecl = () => {
+    const boxGeo = new THREE.BoxGeometry();
+    function splitToNChunks(array) {
+        let result = [];
+        while(array.length > 0) {
+            result.push(array.splice(0, 3));
         }
-    });
-    const averageV = new THREE.Vector3();
-    normalizedVertices.forEach(v => averageV.add(v));
-    averageV.multiplyScalar(1. / normalizedVertices.length);
+        return result;
+    }
+    var vertices = Array.from(boxGeo.attributes.position.array);
+    var indices = splitToNChunks(Array.from(boxGeo.index.array), 3);
+    var facesVertices = Array.from(indices.map(face => {
+        return Array.from(face.map(vIndex => {
+            return new THREE.Vector3(vertices[3*vIndex],vertices[3*vIndex+1],vertices[3*vIndex+2])
+        }))
+    }))
+    return new DcelMesh( facesVertices);
+}
+
+const boxMeshes = []
+const makeMesh = (offset, decl) => {
+    const boxG = new THREE.BufferGeometry();
+    const vertices = decl.toVertices();
+    const verticesArray = new Float32Array(vertices.length * 3);
     vertices.forEach((v, i) => {
-        v.sub(averageV)
-        v.toArray(verticesArray, 3*i)});
+        v.toArray(verticesArray, 3*i)
+    });
     boxG.setAttribute('position', new THREE.BufferAttribute(verticesArray, 3));
     boxG.computeVertexNormals();
     boxG.computeBoundingBox();
@@ -879,37 +871,27 @@ const addDecl = decl => {
             planeNormal: {value: planeNormal}
         }
     })
-    boxMaterials.push(material);
     const mesh = new THREE.Mesh(boxG, material);
-    averageV.multiplyScalar(2).add(new THREE.Vector3(0.4,0.4,0.1));
-    decl.offset = averageV.clone();
-    mesh.position.copy(averageV);
+    mesh.decl = decl;
     mesh.layers.enable(1);
     scene.add(mesh);
+    mesh.position.set(decl.offset.x,decl.offset.y,decl.offset.z);
     boxMeshes.push(mesh);
     return mesh;
 }
 
-const updateDecl = newMeshes => {
-    boxMeshes.forEach(v => scene.remove(v));
-    boxMeshes.length = 0;
-    boxDeclMeshes.length = 0;
-    boxMaterials.length = 0;
-    newMeshes.forEach(m => {
-        boxDeclMeshes.push(m)
-    })
-    boxDeclMeshes.forEach(m => addDecl(m));
-} 
-updateDecl([dcelMesh])
+makeMesh(new THREE.Vector3(), boxDecl())
 
-const cutMesh = plane => {
-    let newMeshes = boxDeclMeshes.map((m, i) => {
-        m.cut(plane)
-       return m.break();
-    } )
-
-    updateDecl(newMeshes.flat())
-    
+const cutMesh = (mesh, plane) => {
+    mesh.decl.cut(plane);
+    const newDecl = mesh.decl.break();
+    if (newDecl.length > 1) {
+        boxMeshes.splice(boxMeshes.indexOf(mesh), 1);
+        newDecl.forEach(decl => {
+            makeMesh(mesh.position.clone(), decl)
+        })
+        scene.remove(mesh)
+    }
 }
 const cutMeshUsingPlane = () => {
     const normal = new THREE.Vector3(debugObject.cutX,debugObject.cutY,debugObject.cutZ)
@@ -918,7 +900,10 @@ const cutMeshUsingPlane = () => {
     }
     normal.normalize();
     const newPlane = new Plane(cutMe.position.clone(), normal)
-    cutMesh(newPlane);
+    const meshQueue = Array.from(boxMeshes);
+    while (meshQueue.length) {
+        cutMesh(meshQueue.pop(), newPlane)
+    }
 }
 debugObject.cutMeshUsingPlane = cutMeshUsingPlane
 gui.add( debugObject, 'cutMeshUsingPlane' ); // Button
@@ -1000,7 +985,7 @@ const tick = () =>
     
     // update box
     rotateBox(timeTracker.elapsedTime)
-    for (let boxM of boxMaterials) {
+    for (let boxM of boxMeshes.map(m => m.material)) {
     boxM.uniforms.mIsDragging.value = mouse.end !== null;
     if (boxM.uniforms.mIsDragging.value) {
         boxM.uniforms.mStart.value = mouse.start;
@@ -1009,7 +994,7 @@ const tick = () =>
 }
     updatePlane();
     updateCut();
-    for (let boxM of boxMaterials) {
+    for (let boxM of boxMeshes.map(m => m.material)) {
         boxM.planePos = cutMe.position;
         boxM.planeNormal = debugObject
         
