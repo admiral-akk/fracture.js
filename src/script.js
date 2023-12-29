@@ -31,99 +31,6 @@ class DebugIterator {
 }
 
 /**
- * Mouse tracking
- */
-const mouse = {
-  start: null,
-  end: null,
-  justReleased: false,
-};
-
-const mousePos = (event) => {
-  return new THREE.Vector2(
-    (event.clientX / window.innerWidth) * 2 - 1,
-    -(event.clientY / window.innerHeight) * 2 + 1
-  );
-};
-
-const calculatePlane = () => {
-  if (!mouse.start || !mouse.end) {
-    return;
-  }
-  const startVector = new THREE.Vector3(
-    mouse.start.x,
-    mouse.start.y,
-    // no idea why -1.3 works here. BUT IT WORKS.
-    -1.3
-  ).applyQuaternion(camera.quaternion);
-
-  const endVector = new THREE.Vector3(
-    mouse.end.x,
-    mouse.end.x === mouse.start.x && mouse.end.y === mouse.start.y
-      ? 0.5
-      : mouse.end.y,
-    -1.3
-  ).applyQuaternion(camera.quaternion);
-
-  const normal = startVector.clone().cross(endVector).normalize();
-  const position = startVector
-    .clone()
-    .add(endVector)
-    .normalize()
-    .multiplyScalar(camera.position.length())
-    .add(camera.position);
-
-  return [position, normal];
-};
-
-window.addEventListener("pointermove", (event) => {
-  if (event.target.className !== "webgl" || !mouse.start) {
-    mouse.start = null;
-    mouse.end = null;
-    return;
-  }
-  if (mouse.start) {
-    mouse.end = mousePos(event);
-  }
-  const posNorm = calculatePlane();
-  updatePlane(posNorm[0], posNorm[1]);
-});
-
-window.addEventListener("pointerdown", (event) => {
-  if (event.target.className !== "webgl") {
-    mouse.start = null;
-    mouse.end = null;
-    return;
-  }
-  mouse.start = mousePos(event);
-  mouse.end = null;
-});
-
-window.addEventListener("pointerup", (event) => {
-  if (event.target.className === "webgl") {
-    const posNorm = calculatePlane();
-    updatePlane(posNorm[0], posNorm[1]);
-    cutMeshUsingPlane();
-  }
-
-  mouse.start = null;
-  mouse.end = null;
-  mouse.justReleased = true;
-});
-
-/**
- * Debug
- */
-
-const planeNormal = new THREE.Vector3(0, 1, 0);
-const debugObject = {
-  timeSpeed: 1.0,
-};
-
-const gui = new GUI();
-gui.add(debugObject, "timeSpeed").min(0).max(3).step(0.1);
-
-/**
  * Core objects
  */
 const sizes = {
@@ -148,6 +55,137 @@ camera.position.z = 3;
 scene.add(camera);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableRotate = false;
+
+/**
+ * Mouse tracking
+ */
+const mouse = {
+  start: null,
+  end: null,
+  justReleased: false,
+};
+
+const lineM = new THREE.LineBasicMaterial({});
+const lineV = new Float32Array(6);
+const lineG = new THREE.BufferGeometry();
+const line = new THREE.Line(lineG, lineM);
+scene.add(line);
+
+const mousePos = (event) => {
+  return new THREE.Vector2(
+    (event.clientX / window.innerWidth) * 2 - 1,
+    -(event.clientY / window.innerHeight) * 2 + 1
+  );
+};
+
+const calculatePlane = () => {
+  if (!mouse.start || !mouse.end) {
+    line.visible = false;
+    return;
+  }
+  const startVector = new THREE.Vector3(
+    mouse.start.x * camera.aspect,
+    mouse.start.y,
+    // no idea why -1.3 works here. BUT IT WORKS.
+    -1.3
+  ).applyQuaternion(camera.quaternion);
+
+  const endVector = new THREE.Vector3(
+    mouse.end.x * camera.aspect,
+    mouse.end.x === mouse.start.x && mouse.end.y === mouse.start.y
+      ? 0.5
+      : mouse.end.y,
+    -1.3
+  ).applyQuaternion(camera.quaternion);
+
+  const normal = startVector.clone().cross(endVector).normalize();
+  const position = startVector
+    .clone()
+    .add(endVector)
+    .normalize()
+    .multiplyScalar(camera.position.length())
+    .add(camera.position);
+
+  const dir = endVector.sub(startVector).normalize();
+
+  startVector
+    .clone()
+    .add(dir.clone().multiplyScalar(10))
+    .add(camera.position)
+    .toArray(lineV, 0);
+  startVector
+    .clone()
+    .add(dir.clone().multiplyScalar(-10))
+    .add(camera.position)
+    .toArray(lineV, 3);
+
+  lineG.setAttribute("position", new THREE.BufferAttribute(lineV, 3));
+
+  return [position, normal];
+};
+
+window.addEventListener("pointermove", (event) => {
+  if (
+    event.target.className !== "webgl" ||
+    !mouse.start ||
+    event.clientY <= 0 ||
+    event.clientX <= 0 ||
+    event.clientX >= window.innerWidth ||
+    event.clientY >= window.innerHeight
+  ) {
+    mouse.start = null;
+    mouse.end = null;
+    line.visible = false;
+    return;
+  }
+  line.visible = true;
+  if (mouse.start) {
+    mouse.end = mousePos(event);
+  }
+  const posNorm = calculatePlane();
+  updatePlane(posNorm[0], posNorm[1]);
+});
+
+window.addEventListener("pointerdown", (event) => {
+  if (event.target.className !== "webgl") {
+    mouse.start = null;
+    mouse.end = null;
+    return;
+  }
+  mouse.start = mousePos(event);
+  mouse.end = null;
+});
+
+window.addEventListener("pointerup", (event) => {
+  if (!mouse.start || !mouse.end) {
+    mouse.start = null;
+    mouse.end = null;
+    line.visible = false;
+    return;
+  }
+  if (event.target.className === "webgl") {
+    const posNorm = calculatePlane();
+    updatePlane(posNorm[0], posNorm[1]);
+    cutMeshUsingPlane();
+  }
+
+  mouse.start = null;
+  mouse.end = null;
+  line.visible = false;
+  mouse.justReleased = true;
+});
+
+/**
+ * Debug
+ */
+
+const planeNormal = new THREE.Vector3(0, 1, 0);
+const debugObject = {
+  timeSpeed: 1.0,
+};
+
+const gui = new GUI();
+gui.add(debugObject, "timeSpeed").min(0).max(3).step(0.1);
 
 /**
  * Loader Setup
@@ -215,28 +253,37 @@ scene.add(overlay);
  * Loading Animation
  */
 let progressRatio = 0.0;
+let currAnimation = null;
 let timeTracker = { enabled: false, deltaTime: 0, elapsedTime: 0.0 };
 const updateProgress = (progress) => {
   progressRatio = Math.max(progress, progressRatio);
-  gsap.to(overlayMaterial.uniforms.uMaxX, {
+  if (currAnimation) {
+    currAnimation.kill();
+  }
+  currAnimation = gsap.to(overlayMaterial.uniforms.uMaxX, {
     duration: 1,
     value: progressRatio,
   });
   if (progressRatio == 1) {
+    currAnimation.kill();
     const timeline = gsap.timeline();
-    timeline.to(overlayMaterial.uniforms.uWidthY, {
+    currAnimation = timeline.to(overlayMaterial.uniforms.uMaxX, {
       duration: 0.2,
-      delay: 1.0,
+      value: progressRatio,
+    });
+    timeline.to(overlayMaterial.uniforms.uWidthY, {
+      duration: 0.1,
+      delay: 0.0,
       value: 0.01,
       ease: "power1.inOut",
     });
     timeline.to(overlayMaterial.uniforms.uWidthY, {
-      duration: 0.2,
+      duration: 0.1,
       value: 0.0,
       ease: "power1.in",
     });
     timeline.to(overlayMaterial.uniforms.uMinY, {
-      duration: 0.6,
+      duration: 0.5,
       value: 0.5,
       ease: "power1.in",
     });
@@ -972,6 +1019,7 @@ const cutMe = new THREE.Mesh(cutG, cutM);
 cutMe.worldLookAt = () => {
   return new THREE.Vector3(0, 0, 1).applyQuaternion(cutMe.quaternion);
 };
+cutMe.visible = false;
 scene.add(cutMe);
 
 const updatePlane = (position, normal) => {
