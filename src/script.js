@@ -45,16 +45,66 @@ const mousePos = (event) => {
     -(event.clientY / window.innerHeight) * 2 + 1
   );
 };
+
+const calculatePlane = () => {
+  if (!mouse.start || !mouse.end) {
+    return;
+  }
+  const startVector = new THREE.Vector3(
+    mouse.start.x,
+    mouse.start.y,
+    // no idea why -1.3 works here. BUT IT WORKS.
+    -1.3
+  ).applyQuaternion(camera.quaternion);
+
+  const endVector = new THREE.Vector3(
+    mouse.end.x,
+    mouse.end.x === mouse.start.x && mouse.end.y === mouse.start.y
+      ? 0.5
+      : mouse.end.y,
+    -1.3
+  ).applyQuaternion(camera.quaternion);
+
+  const normal = startVector.clone().cross(endVector).normalize();
+  const position = startVector
+    .clone()
+    .add(endVector)
+    .normalize()
+    .multiplyScalar(camera.position.length())
+    .add(camera.position);
+
+  return [position, normal];
+};
+
 window.addEventListener("pointermove", (event) => {
+  if (event.target.className !== "webgl") {
+    mouse.start = null;
+    mouse.end = null;
+  }
   if (mouse.start) {
     mouse.end = mousePos(event);
   }
+  const posNorm = calculatePlane();
+  updatePlane(posNorm[0], posNorm[1]);
 });
+
 window.addEventListener("pointerdown", (event) => {
+  if (event.target.className !== "webgl") {
+    mouse.start = null;
+    mouse.end = null;
+    return;
+  }
   mouse.start = mousePos(event);
   mouse.end = null;
 });
+
 window.addEventListener("pointerup", (event) => {
+  if (event.target.className === "webgl") {
+    const posNorm = calculatePlane();
+    updatePlane(posNorm[0], posNorm[1]);
+    cutMeshUsingPlane();
+  }
+
   mouse.start = null;
   mouse.end = null;
   mouse.justReleased = true;
@@ -65,39 +115,12 @@ window.addEventListener("pointerup", (event) => {
  */
 
 const planeNormal = new THREE.Vector3(0, 1, 0);
-const planePosition = new THREE.Vector3(0, 0, 0);
 const debugObject = {
   timeSpeed: 1.0,
-  cutOffset: 0,
-  cutX: 0,
-  cutY: 1,
-  cutZ: 0,
 };
 
-const updatePosition = () => {
-  planePosition
-    .set(planeNormal.x, planeNormal.y, planeNormal.z)
-    .multiplyScalar(debugObject.cutOffset);
-};
-const updateNormal = () => {
-  planeNormal.set(debugObject.cutX, debugObject.cutY, debugObject.cutZ);
-  if (planeNormal.length() === 0) {
-    planeNormal.setY(1);
-  }
-  planeNormal.normalize();
-  updatePosition();
-};
 const gui = new GUI();
 gui.add(debugObject, "timeSpeed").min(0).max(3).step(0.1);
-gui
-  .add(debugObject, "cutOffset")
-  .min(-1)
-  .max(1)
-  .step(0.01)
-  .onChange(updatePosition);
-gui.add(debugObject, "cutX").min(-1).max(1).step(0.01).onChange(updateNormal);
-gui.add(debugObject, "cutY").min(-1).max(1).step(0.01).onChange(updateNormal);
-gui.add(debugObject, "cutZ").min(-1).max(1).step(0.01).onChange(updateNormal);
 
 /**
  * Core objects
@@ -123,6 +146,7 @@ camera.position.y = 3;
 camera.position.z = 3;
 scene.add(camera);
 const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableRotate = false;
 
 /**
  * Loader Setup
@@ -944,7 +968,15 @@ class DcelMesh {
 const cutG = new THREE.PlaneGeometry(4, 4);
 const cutM = new THREE.MeshBasicMaterial({ wireframe: true });
 const cutMe = new THREE.Mesh(cutG, cutM);
+cutMe.worldLookAt = () => {
+  return new THREE.Vector3(0, 0, 1).applyQuaternion(cutMe.quaternion);
+};
 scene.add(cutMe);
+
+const updatePlane = (position, normal) => {
+  cutMe.position.set(position.x, position.y, position.z);
+  cutMe.lookAt(normal.clone().add(cutMe.position));
+};
 
 /**
  *  Box
@@ -1048,23 +1080,8 @@ const cutMesh = (mesh, plane) => {
   scene.remove(mesh);
 };
 
-const updatePlane = () => {
-  cutMe.position.set(planePosition.x, planePosition.y, planePosition.z);
-  cutMe.lookAt(planePosition.clone().add(planeNormal));
-};
-
 const cutMeshUsingPlane = () => {
-  const normal = new THREE.Vector3(
-    debugObject.cutX,
-    debugObject.cutY,
-    debugObject.cutZ
-  );
-  if (normal.length() === 0) {
-    normal.setY(1);
-  }
-  normal.normalize();
-  updatePlane();
-  const newPlane = new Plane(cutMe.position.clone(), normal);
+  const newPlane = new Plane(cutMe.position.clone(), cutMe.worldLookAt());
   const meshQueue = Array.from(boxMeshes);
   const it = new DebugIterator(meshQueue.length + 2);
   while (meshQueue.length) {
@@ -1076,22 +1093,7 @@ debugObject.cutMeshUsingPlane = cutMeshUsingPlane;
 gui.add(debugObject, "cutMeshUsingPlane"); // Button
 
 const randomCut = () => {
-  const cutX = debugObject.cutX;
-  const cutY = debugObject.cutY;
-  const cutZ = debugObject.cutZ;
-  const cutOffset = debugObject.cutOffset;
-  debugObject.cutX = Math.random() - 0.5;
-  debugObject.cutY = Math.random() - 0.5;
-  debugObject.cutZ = Math.random() - 0.5;
-  debugObject.cutOffset = Math.random() / 2;
-  updateNormal();
   cutMeshUsingPlane();
-  debugObject.cutX = cutX;
-  debugObject.cutY = cutY;
-  debugObject.cutZ = cutZ;
-  debugObject.cutOffset = cutOffset;
-  updateNormal();
-  updatePlane();
 };
 
 debugObject.randomCut = randomCut;
@@ -1103,40 +1105,6 @@ gui.add(debugObject, "randomCut"); // Button
 
 const raycaster = new THREE.Raycaster(camera.position);
 raycaster.layers.set(1);
-const cut = {
-  startHit: null,
-  startNormal: null,
-  endHit: null,
-};
-
-const updateCut = () => {
-  if (mouse.start) {
-    raycaster.setFromCamera(mouse.start, camera);
-    const intersects = raycaster.intersectObjects(scene.children);
-    if (intersects.length > 0) {
-      cut.startHit = intersects[0].point;
-      cut.startNormal = intersects[0].normal;
-    }
-  }
-
-  if (mouse.end) {
-    raycaster.setFromCamera(mouse.end, camera);
-    const intersects = raycaster.intersectObjects(scene.children);
-    if (intersects.length > 0) {
-      cut.endHit = intersects[0].point;
-    }
-  }
-
-  if (mouse.justReleased) {
-    mouse.justReleased = false;
-    if (!cut.endHit || !cut.startHit) {
-      return;
-    }
-    cut.endHit = null;
-    cut.startHit = null;
-    cut.startNormal = null;
-  }
-};
 
 /**
  * Animation
@@ -1151,7 +1119,7 @@ const tick = () => {
   }
 
   // cut
-  const randomCutCount = 10;
+  const randomCutCount = 0;
   if (!hasCut && timeTracker.elapsedTime > 1) {
     hasCut = true;
     for (let i = 0; i < randomCutCount; i++) {
@@ -1161,13 +1129,7 @@ const tick = () => {
   // update controls
   controls.update();
 
-  // update box
-  updatePlane();
-  updateCut();
-
   for (let boxM of boxMeshes.map((m) => m.material)) {
-    boxM.planePos = planePosition;
-    boxM.planeNormal = planeNormal;
   }
 
   // Render scene
