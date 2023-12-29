@@ -199,12 +199,14 @@ const updateProgress = (progress) => {
   }
 };
 
-if (loadingManager.itemsTotal > 0) {
-  loadingManager.onProgress = (_, itemsLoaded, itemsTotal) =>
-    updateProgress(itemsLoaded / itemsTotal);
-} else {
-  updateProgress(1);
-}
+const initLoadingAnimation = () => {
+  if (loadingManager.itemsTotal > 0) {
+    loadingManager.onProgress = (_, itemsLoaded, itemsTotal) =>
+      updateProgress(itemsLoaded / itemsTotal);
+  } else {
+    updateProgress(1);
+  }
+};
 
 /**
  * DCEL: https://en.wikipedia.org/wiki/Doubly_connected_edge_list
@@ -479,11 +481,6 @@ class DcelMesh {
 
     this.offset.add(average);
     this.vertices.forEach((v) => v.sub(average));
-    console.log("this.vertices", this.vertices);
-    console.log(
-      "Array.from(this.edges.values())",
-      Array.from(this.edges.values())
-    );
   }
 
   validatePrev(validationName) {
@@ -854,8 +851,6 @@ class DcelMesh {
 
   toVertices() {
     let [vertices, indices] = this.toVerticesIndices();
-    console.log("vertices", vertices);
-    console.log("indices", indices);
     return indices.map(
       (vertexIndex) =>
         new THREE.Vector3(
@@ -884,8 +879,6 @@ class DcelMesh {
     }
     let vertexArray = new Float32Array(this.vertices.length * 3);
     this.vertices.forEach((v, i) => v.toArray(vertexArray, 3 * i));
-    console.log("this.vertices", this.vertices);
-    console.log("indices", indices);
     return [vertexArray, indices];
   }
 }
@@ -1096,5 +1089,5 @@ const tick = () => {
   window.requestAnimationFrame(tick);
   stats.end();
 };
-
+initLoadingAnimation();
 tick();
