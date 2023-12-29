@@ -77,9 +77,10 @@ const calculatePlane = () => {
 };
 
 window.addEventListener("pointermove", (event) => {
-  if (event.target.className !== "webgl") {
+  if (event.target.className !== "webgl" || !mouse.start) {
     mouse.start = null;
     mouse.end = null;
+    return;
   }
   if (mouse.start) {
     mouse.end = mousePos(event);
@@ -214,7 +215,7 @@ scene.add(overlay);
  * Loading Animation
  */
 let progressRatio = 0.0;
-let timeTracker = { enabled: false, elapsedTime: 0.0 };
+let timeTracker = { enabled: false, deltaTime: 0, elapsedTime: 0.0 };
 const updateProgress = (progress) => {
   progressRatio = Math.max(progress, progressRatio);
   gsap.to(overlayMaterial.uniforms.uMaxX, {
@@ -982,7 +983,9 @@ const updatePlane = (position, normal) => {
  *  Box
  */
 
-const boxMeshes = [];
+const root = new THREE.Group();
+root.position.set(0, 0, 0);
+scene.add(root);
 const boxDecl = () => {
   const boxGeo = new THREE.BoxGeometry();
   function splitToNChunks(array) {
@@ -1030,7 +1033,7 @@ const makeMesh = (
   const mesh = new THREE.Mesh(boxG, material);
   mesh.decl = decl;
   mesh.layers.enable(1);
-  scene.add(mesh);
+  root.add(mesh);
   mesh.position.set(pos.x, pos.y, pos.z);
   mesh.targetPos = targetPos.clone();
   gsap.to(mesh.position, {
@@ -1040,16 +1043,12 @@ const makeMesh = (
     z: targetPos.z,
     ease: "elastic.out",
   });
-  boxMeshes.push(mesh);
-  return mesh;
 };
 
 makeMesh(boxDecl());
 
 const cutMesh = (mesh, plane) => {
-  plane.position.sub(mesh.position);
   mesh.decl.cut(plane);
-  plane.position.add(mesh.position);
   const mFaces = mesh.decl.break();
   if (!mFaces) {
     return;
@@ -1076,17 +1075,23 @@ const cutMesh = (mesh, plane) => {
       pos.clone().multiplyScalar(distanceScale)
     );
   });
-  boxMeshes.splice(boxMeshes.indexOf(mesh), 1);
-  scene.remove(mesh);
+  root.remove(mesh);
 };
 
 const cutMeshUsingPlane = () => {
-  const newPlane = new Plane(cutMe.position.clone(), cutMe.worldLookAt());
-  const meshQueue = Array.from(boxMeshes);
+  const meshQueue = Array.from(root.children);
   const it = new DebugIterator(meshQueue.length + 2);
   while (meshQueue.length) {
     it.tick();
-    cutMesh(meshQueue.pop(), newPlane);
+    const mesh = meshQueue.pop();
+    const pos = cutMe.position.clone();
+    const norm = cutMe.worldLookAt();
+    mesh.attach(cutMe);
+    const newPlane = new Plane(cutMe.position.clone(), cutMe.worldLookAt());
+    cutMesh(mesh, newPlane);
+    scene.attach(cutMe);
+    cutMe.position.set(pos.x, pos.y, pos.z);
+    cutMe.lookAt(norm.add(pos));
   }
 };
 debugObject.cutMeshUsingPlane = cutMeshUsingPlane;
@@ -1106,6 +1111,10 @@ gui.add(debugObject, "randomCut"); // Button
 const raycaster = new THREE.Raycaster(camera.position);
 raycaster.layers.set(1);
 
+const rotateRoot = (deltaTime) => {
+  root.rotateY(deltaTime);
+};
+
 /**
  * Animation
  */
@@ -1114,8 +1123,8 @@ const clock = new THREE.Clock();
 const tick = () => {
   stats.begin();
   if (timeTracker.enabled) {
-    timeTracker.elapsedTime =
-      timeTracker.elapsedTime + debugObject.timeSpeed * clock.getDelta();
+    timeTracker.deltaTime = debugObject.timeSpeed * clock.getDelta();
+    timeTracker.elapsedTime = timeTracker.elapsedTime + timeTracker.deltaTime;
   }
 
   // cut
@@ -1128,9 +1137,7 @@ const tick = () => {
   }
   // update controls
   controls.update();
-
-  for (let boxM of boxMeshes.map((m) => m.material)) {
-  }
+  rotateRoot(timeTracker.deltaTime);
 
   // Render scene
   renderer.render(scene, camera);
