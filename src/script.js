@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader";
+import { FontLoader } from "three/addons/loaders/FontLoader.js";
 import GUI from "lil-gui";
 import overlayVertexShader from "./shaders/overlay/vertex.glsl";
 import overlayFragmentShader from "./shaders/overlay/fragment.glsl";
@@ -10,6 +11,7 @@ import slashVertexShader from "./shaders/slash/vertex.glsl";
 import slashFragmentShader from "./shaders/slash/fragment.glsl";
 import { gsap } from "gsap";
 import Stats from "stats-js";
+import { TextGeometry } from "three/examples/jsm/geometries/TextGeometry.js";
 
 /**
  * Debug iterator
@@ -260,10 +262,27 @@ const textureLoader = new THREE.TextureLoader(loadingManager);
 const dracoLoader = new DRACOLoader(loadingManager);
 const gltfLoader = new GLTFLoader(loadingManager);
 const audioLoader = new THREE.AudioLoader(loadingManager);
+const fontLoader = new FontLoader(loadingManager);
 gltfLoader.setDRACOLoader(dracoLoader);
 dracoLoader.setDecoderPath("./draco/gltf/");
 
+/**
+ * Textures
+ */
+
 const matcapTexture = textureLoader.load("./matcap01.png");
+
+/**
+ * Fonts
+ */
+const fonts = [];
+fontLoader.load("./fonts/helvetiker_regular.typeface.json", function (font) {
+  fonts.push(font);
+});
+/**
+ * Sound
+ */
+
 const sounds = [];
 const buffers = [];
 const soundCount = 7;
@@ -476,7 +495,7 @@ class HalfEdge {
   getLoop() {
     const loop = [this];
     let next = this.next;
-    const it = new DebugIterator(1000);
+    const it = new DebugIterator(100000);
     while (next !== this) {
       it.tick();
       loop.push(next);
@@ -573,14 +592,14 @@ class DcelMesh {
     const edges = Array.from(this.edges.values());
     // find clusters of edges which have the same normal and are linked
     const clusters = [];
-    const it = new DebugIterator(1000);
+    const it = new DebugIterator(100000);
     while (edges.length) {
       it.tick();
       const e = edges[0];
       const currNormal = this.getCross(e).normalize();
       const cluster = [];
       const queue = [e];
-      const it2 = new DebugIterator(1000);
+      const it2 = new DebugIterator(100000);
       while (queue.length) {
         it2.tick();
         const next = queue.pop();
@@ -621,7 +640,7 @@ class DcelMesh {
     let mColinearEdge = Array.from(this.edges.values())
       .filter((e) => this.getCross(e).length() <= epslion)
       .pop();
-    const it = new DebugIterator(1000);
+    const it = new DebugIterator(100000);
     while (mColinearEdge && this.vertices.length > 4) {
       it.tick(() => {
         console.log("mColinearEdge", mColinearEdge);
@@ -675,7 +694,6 @@ class DcelMesh {
     }
   }
 
-  // this assumes that the mesh is convex
   calculateCentroid() {
     const averagePoint = this.vertices
       .reduce((acc, v) => acc.add(v), new THREE.Vector3())
@@ -729,8 +747,6 @@ class DcelMesh {
       [new THREE.Vector3(), 0]
     );
     centroidVolume[0].multiplyScalar(1 / centroidVolume[1]);
-    console.log(centroidVolume);
-    console.log(this.vertices);
     return centroidVolume;
   }
 
@@ -876,13 +892,13 @@ class DcelMesh {
       return;
     }
 
-    const it = new DebugIterator(1000);
+    const it = new DebugIterator(100000);
     while (vIndices.length) {
       it.tick();
       const loop = [];
       let mNextV = vIndices[0];
 
-      const it2 = new DebugIterator(1000);
+      const it2 = new DebugIterator(100000);
       while (mNextV !== undefined) {
         it2.tick();
         loop.push(mNextV);
@@ -907,7 +923,7 @@ class DcelMesh {
       loops.push(loop);
     }
 
-    const it3 = new DebugIterator(1000);
+    const it3 = new DebugIterator(100000);
     while (loops.length) {
       it3.tick();
       const loop = loops.pop();
@@ -967,12 +983,12 @@ class DcelMesh {
     }
 
     const chains = [];
-    const it = new DebugIterator(1000);
+    const it = new DebugIterator(100000);
     while (edges.length) {
       it.tick();
       const chain = [];
       let mNextE = edges[0];
-      const it2 = new DebugIterator(1000);
+      const it2 = new DebugIterator(100000);
       while (mNextE) {
         it2.tick();
         chain.push(mNextE);
@@ -1002,7 +1018,7 @@ class DcelMesh {
         const newV = chainWithVert[i][1];
 
         const edgePairsToReplace = [[e.prev, e]];
-        const it = new DebugIterator(1000);
+        const it = new DebugIterator(100000);
         while (
           !chainWithVert
             .map((ev) => ev[0])
@@ -1064,13 +1080,13 @@ class DcelMesh {
   edgeClusters() {
     const edges = Array.from(this.edges.values());
     const clusters = [];
-    const it = new DebugIterator(1000);
+    const it = new DebugIterator(100000);
     while (edges.length) {
       it.tick();
       const queue = [edges[0]];
       let cluster = [];
 
-      const it2 = new DebugIterator(1000);
+      const it2 = new DebugIterator(100000);
       while (queue.length) {
         it2.tick();
         const edge = queue.pop();
@@ -1098,12 +1114,12 @@ class DcelMesh {
     // generate the faces for each cluster
     return clusters.map((cluster) => {
       const faces = [];
-      const it = new DebugIterator(1000);
+      const it = new DebugIterator(100000);
       while (cluster.length) {
         it.tick();
         let edge = cluster[0];
         const face = [];
-        const it2 = new DebugIterator(1000);
+        const it2 = new DebugIterator(100000);
         while (!face.includes(edge)) {
           it2.tick();
           face.push(edge);
@@ -1161,7 +1177,7 @@ class DcelMesh {
       traversedEdges.push(edge);
       var next = edge.next;
       // This does not handle colinear edges at all.
-      const it = new DebugIterator(1000);
+      const it = new DebugIterator(100000);
       while (!traversedEdges.includes(next)) {
         it.tick();
         indices.push(edge.start, next.start, next.end);
@@ -1200,33 +1216,38 @@ const updatePlane = (position, normal) => {
 const root = new THREE.Group();
 root.position.set(0, 0, 0);
 scene.add(root);
-const boxDecl = () => {
-  const boxGeo = new THREE.BoxGeometry();
-  function splitToNChunks(array) {
-    let result = [];
-    const it = new DebugIterator(1000);
-    while (array.length > 0) {
-      it.tick();
-      result.push(array.splice(0, 3));
+const geoToDecl = (geometry) => {
+  const indices = geometry.index;
+  const positions = geometry.attributes.position;
+  const v = new THREE.Vector3();
+  var facesVertices = [];
+  if (!indices) {
+    for (let i = 0; i < positions.count; i += 3) {
+      facesVertices.push([
+        v.fromBufferAttribute(positions, i).clone(),
+        v.fromBufferAttribute(positions, i + 1).clone(),
+        v.fromBufferAttribute(positions, i + 2).clone(),
+      ]);
     }
-    return result;
+  } else {
+    for (let i = 0; i < indices.count; i += 3) {
+      facesVertices.push([
+        v.fromBufferAttribute(positions, indices.array[i]).clone(),
+        v.fromBufferAttribute(positions, indices.array[i + 1]).clone(),
+        v.fromBufferAttribute(positions, indices.array[i + 2]).clone(),
+      ]);
+    }
   }
-  var vertices = Array.from(boxGeo.attributes.position.array);
-  var indices = splitToNChunks(Array.from(boxGeo.index.array), 3);
-  var facesVertices = Array.from(
-    indices.map((face) => {
-      return Array.from(
-        face.map((vIndex) => {
-          return new THREE.Vector3(
-            vertices[3 * vIndex],
-            vertices[3 * vIndex + 1],
-            vertices[3 * vIndex + 2]
-          );
-        })
-      );
-    })
-  );
-  return new DcelMesh(facesVertices);
+  const decl = new DcelMesh(facesVertices);
+  const b = decl.break();
+  const decls = b ? b.map((faces) => new DcelMesh(faces)) : [decl];
+
+  for (const d of decls) {
+    const average = d.centerOfMass.clone();
+    d.vertices.forEach((v) => v.sub(average));
+    d.centerOfMass.sub(average);
+    makeMesh(d, average, average);
+  }
 };
 
 const makeMesh = (
@@ -1259,8 +1280,7 @@ const makeMesh = (
   });
 };
 
-makeMesh(boxDecl());
-
+geoToDecl(new THREE.BoxGeometry());
 const cutMesh = (mesh, plane) => {
   mesh.decl.cut(plane);
   const mFaces = mesh.decl.break();
