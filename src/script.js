@@ -514,18 +514,45 @@ class DcelMesh {
     return this.vertices[index].clone();
   }
 
-  getEdges() {
+  getEdges(start = undefined, end = undefined) {
     const edges = [];
-    const it = this.edgeMap.values();
-    let v = it.next();
-    while (!v.done) {
-      const it2 = v.value.values();
-      let v2 = it2.next();
-      while (!v2.done) {
-        edges.push(v2.value);
-        v2 = it2.next();
+    if (!start && !end) {
+      const it = this.edgeMap.values();
+      let v = it.next();
+      while (!v.done) {
+        const it2 = v.value.values();
+        let v2 = it2.next();
+        while (!v2.done) {
+          edges.push(v2.value);
+          v2 = it2.next();
+        }
+        v = it.next();
       }
-      v = it.next();
+    } else if (start && !end) {
+      let s = this.edgeMap.get(start);
+      if (s) {
+        const it = s.values();
+        let v = it.next();
+        while (!v.done) {
+          edges.push(v.value);
+          v = it.next();
+        }
+      }
+    } else if (!start && end) {
+      let s = this.edgeMap.get(end);
+      if (s) {
+        const it = s.values();
+        let v = it.next();
+        while (!v.done) {
+          edges.push(v.value.prev);
+          v = it.next();
+        }
+      }
+    } else if (start && end) {
+      const e = this.getEdge(start, end);
+      if (e) {
+        edges.push(e);
+      }
     }
     return edges;
   }
@@ -672,9 +699,7 @@ class DcelMesh {
       // colinear - remove the edge and its twin, and redirect
       // the edges connected to it
 
-      const edgesStarting = this.getEdges().filter(
-        (e) => e.start === start && e.end !== end
-      );
+      const edgesStarting = this.getEdges(start, undefined);
 
       edgesStarting.forEach((e) => {
         if (!this.getEdge(end, e.end)) {
@@ -692,9 +717,7 @@ class DcelMesh {
         }
       });
 
-      const edgesEnding = this.getEdges().filter(
-        (e) => e.start !== end && e.end === start
-      );
+      const edgesEnding = this.getEdges(undefined, start);
 
       edgesEnding.forEach((e) => {
         if (!this.getEdge(e.start, end)) {
@@ -913,8 +936,7 @@ class DcelMesh {
         it2.tick();
         loop.push(mNextV);
         vIndices.splice(vIndices.indexOf(mNextV), 1);
-        mNextV = this.getEdges()
-          .filter((e) => e.start === mNextV)
+        mNextV = this.getEdges(mNextV, undefined)
           .map((e) => e.getLoop())
           .map((loop) =>
             loop.filter((e) => vIndices.includes(e.start)).map((e) => e.start)
@@ -942,8 +964,7 @@ class DcelMesh {
         const end = loop[(i + 1) % loop.length];
         // find the face containing both start and end
         const edge = this.getEdge(start, end);
-        const face = this.getEdges()
-          .filter((e) => e.start === start)
+        const face = this.getEdges(start, undefined)
           .map((e) => e.getLoop())
           .filter((loop) => loop.filter((e) => e.start === end).length > 0)
           .pop();
