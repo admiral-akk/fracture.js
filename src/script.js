@@ -250,6 +250,7 @@ gui.add(debugObject, "timeSpeed").min(0).max(3).step(0.1);
 gui.add(debugObject, "cameraControl").onChange(() => {
   controls.enabled = debugObject.cameraControl;
 });
+gui.hide();
 
 /**
  * Loader Setup
@@ -263,7 +264,7 @@ const audioLoader = new THREE.AudioLoader(loadingManager);
 gltfLoader.setDRACOLoader(dracoLoader);
 dracoLoader.setDecoderPath("./draco/gltf/");
 
-const matcapTexture = textureLoader.load("./matcap.jpg");
+const matcapTexture = textureLoader.load("./matcap01.png");
 const sounds = [];
 const buffers = [];
 const soundCount = 7;
@@ -675,6 +676,65 @@ class DcelMesh {
     }
   }
 
+  // this assumes that the mesh is convex
+  calculateCentroid() {
+    const averagePoint = this.vertices
+      .reduce((acc, v) => acc.add(v), new THREE.Vector3())
+      .multiplyScalar(1 / this.vertices.length);
+
+    const edgeToParse = Array.from(this.edges.values());
+
+    const faces = [];
+    while (edgeToParse.length > 0) {
+      const e = edgeToParse[0];
+      const face = e.getLoop();
+      for (const edge of face) {
+        edgeToParse.splice(edgeToParse.indexOf(edge), 1);
+      }
+      faces.push(face);
+    }
+
+    const centroids = [];
+    for (const face of faces) {
+      const v1 = this.getVertex(face[0].start);
+      for (let i = 1; i < face.length - 1; i++) {
+        const edge = face[i];
+        const v2 = this.getVertex(edge.start);
+        const v3 = this.getVertex(edge.end);
+        const centroid = averagePoint
+          .clone()
+          .add(v1)
+          .add(v2)
+          .add(v3)
+          .multiplyScalar(0.25);
+
+        // Heron's Formula: https://en.wikipedia.org/wiki/Heron%27s_formula
+        const a = v1.distanceTo(v2);
+        const b = v2.distanceTo(v3);
+        const c = v3.distanceTo(v1);
+        const s = (a + b + c) / 2;
+        const baseArea = Math.sqrt(s * (s - a) * (s - b) * (s - c));
+        const baseNormal = v1
+          .clone()
+          .sub(v2)
+          .cross(v3.clone().sub(v2))
+          .normalize();
+        const height = averagePoint.clone().sub(v2).dot(baseNormal);
+        const volume = (baseArea * height) / 3;
+        centroids.push([centroid, volume]);
+      }
+    }
+
+    const centroidVolume = centroids.reduce(
+      (acc, cV) => [acc[0].add(cV[0].multiplyScalar(cV[1])), acc[1] + cV[1]],
+      [new THREE.Vector3(), 0]
+    );
+    centroidVolume[0].multiplyScalar(1 / centroidVolume[1]);
+    console.log(centroidVolume);
+    console.log(this.vertices);
+    return centroidVolume;
+  }
+
   constructor(facesVertices) {
     this.vertices = [];
     this.edges = new Map();
@@ -694,6 +754,11 @@ class DcelMesh {
     this.checkDuplicatePoints("Constructor");
     this.validate("Constructor");
     this.validateNoColinear("Constructor");
+
+    const cV = this.calculateCentroid();
+
+    this.centerOfMass = cV[0];
+    this.volume = cV[1];
   }
 
   validatePrev(validationName) {
@@ -1204,23 +1269,17 @@ const cutMesh = (mesh, plane) => {
     return;
   }
   mFaces.forEach((faces) => {
-    const vertices = faces.flat();
-    const dedupVertices = vertices.filter(
-      (v, i) =>
-        vertices.filter((v2, j) => j < i && v.distanceTo(v2) <= epslion)
-          .length === 0
-    );
-    const average = dedupVertices
-      .reduce((acc, v) => acc.add(v), new THREE.Vector3())
-      .multiplyScalar(1 / dedupVertices.length);
-    faces.forEach((face) => face.forEach((v) => v.sub(average)));
+    const decl = new DcelMesh(faces);
+    const average = decl.centerOfMass.clone();
+    decl.vertices.forEach((v) => v.sub(average));
+    decl.centerOfMass.sub(average);
     const distanceScale = 2.5;
     const pos = mesh.targetPos
       .clone()
       .multiplyScalar(1 / distanceScale)
       .add(average);
     makeMesh(
-      new DcelMesh(faces),
+      decl,
       mesh.position.clone(),
       pos.clone().multiplyScalar(distanceScale)
     );
@@ -1288,7 +1347,9 @@ const tick = () => {
   }
   // update controls
   controls.update();
-  rotateRoot(timeTracker.deltaTime);
+  if (slashMaterial.uniforms.uAnimationTime.value > 0.6) {
+    rotateRoot(timeTracker.deltaTime);
+  }
 
   // Render scene
   renderer.render(scene, camera);
