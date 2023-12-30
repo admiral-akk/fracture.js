@@ -66,7 +66,7 @@ camera.add(listener);
 const mouse = {
   start: null,
   end: null,
-  justReleased: false,
+  lastHit: 1000,
 };
 
 const lineM = new THREE.LineBasicMaterial({});
@@ -233,7 +233,6 @@ window.addEventListener("pointerup", (event) => {
   mouse.start = null;
   mouse.end = null;
   line.visible = false;
-  mouse.justReleased = true;
 });
 
 /**
@@ -1268,6 +1267,7 @@ const cutMesh = (mesh, plane) => {
   if (!mFaces) {
     return;
   }
+  mouse.lastHit = 0;
   mFaces.forEach((faces) => {
     const decl = new DcelMesh(faces);
     const average = decl.centerOfMass.clone();
@@ -1336,6 +1336,7 @@ const tick = () => {
     timeTracker.elapsedTime = timeTracker.elapsedTime + timeTracker.deltaTime;
   }
   slashMaterial.uniforms.uAnimationTime.value += timeTracker.deltaTime;
+  mouse.lastHit += timeTracker.deltaTime;
 
   // cut
   const randomCutCount = 0;
@@ -1347,7 +1348,7 @@ const tick = () => {
   }
   // update controls
   controls.update();
-  if (slashMaterial.uniforms.uAnimationTime.value > 0.6) {
+  if (mouse.lastHit > 0.6) {
     rotateRoot(timeTracker.deltaTime);
   }
 
