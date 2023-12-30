@@ -6,6 +6,8 @@ import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader";
 import GUI from "lil-gui";
 import overlayVertexShader from "./shaders/overlay/vertex.glsl";
 import overlayFragmentShader from "./shaders/overlay/fragment.glsl";
+import slashVertexShader from "./shaders/slash/vertex.glsl";
+import slashFragmentShader from "./shaders/slash/fragment.glsl";
 import { gsap } from "gsap";
 import Stats from "stats-js";
 
@@ -85,6 +87,7 @@ const calculatePlane = () => {
     line.visible = false;
     return;
   }
+
   const startVector = new THREE.Vector3(
     mouse.start.x * camera.aspect,
     mouse.start.y,
@@ -140,7 +143,7 @@ window.addEventListener("pointermove", (event) => {
     line.visible = false;
     return;
   }
-  line.visible = true;
+  line.visible = false;
   if (mouse.start) {
     mouse.end = mousePos(event);
   }
@@ -158,6 +161,21 @@ window.addEventListener("pointerdown", (event) => {
   mouse.end = null;
 });
 
+const intersectionLines = (v1, d1, v2, d2) => {
+  const c = d2.clone().cross(d1);
+  if (Math.abs(c) <= epslion) {
+    return null;
+  }
+  return v2.clone().sub(v1).cross(d1) / c;
+};
+
+const walls = [
+  [new THREE.Vector2(0, 0), new THREE.Vector2(1, 0)],
+  [new THREE.Vector2(0, 0), new THREE.Vector2(0, 1)],
+  [new THREE.Vector2(1, 0), new THREE.Vector2(0, 1)],
+  [new THREE.Vector2(0, 1), new THREE.Vector2(1, 0)],
+];
+
 window.addEventListener("pointerup", (event) => {
   if (!mouse.start || !mouse.end) {
     mouse.start = null;
@@ -169,6 +187,46 @@ window.addEventListener("pointerup", (event) => {
     playSound();
     const posNorm = calculatePlane();
     updatePlane(posNorm[0], posNorm[1]);
+    const p2 = new THREE.Vector2(
+      (mouse.start.x + 1) / 2,
+      (mouse.start.y + 1) / 2
+    );
+    const pEnd = new THREE.Vector2(
+      (mouse.end.x + 1) / 2,
+      (mouse.end.y + 1) / 2
+    );
+    const d2 = pEnd.clone();
+    d2.sub(p2).normalize();
+    const dNeg2 = d2.clone().multiplyScalar(-1);
+
+    const end = walls
+      .map((pd) => {
+        return intersectionLines(
+          pd[0].clone(),
+          pd[1].clone(),
+          p2.clone(),
+          dNeg2.clone()
+        );
+      })
+      .filter((v) => v !== null && v >= 0)
+      .reduce((acc, v) => Math.min(v, acc), 1000);
+    const start = walls
+      .map((pd) => {
+        return intersectionLines(
+          pd[0].clone(),
+          pd[1].clone(),
+          p2.clone(),
+          d2.clone()
+        );
+      })
+      .filter((v) => v !== null && v >= 0)
+      .reduce((acc, v) => Math.min(v, acc), 1000);
+
+    const uStart = p2.clone().add(dNeg2.clone().multiplyScalar(start));
+    const uEnd = p2.clone().add(d2.clone().multiplyScalar(end));
+    slashMaterial.uniforms.uStart.value = uStart.clone();
+    slashMaterial.uniforms.uEnd.value = uEnd.clone();
+    slashMaterial.uniforms.uAnimationTime.value = 0;
     cutMeshUsingPlane();
   }
 
@@ -255,6 +313,24 @@ window.addEventListener("dblclick", (event) => {
     canvas.requestFullscreen();
   }
 });
+/**
+ * Slash overlay
+ */
+const slashGeometry = new THREE.PlaneGeometry(2, 2, 1, 1);
+const slashMaterial = new THREE.ShaderMaterial({
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.NormalBlending,
+  vertexShader: slashVertexShader,
+  fragmentShader: slashFragmentShader,
+  uniforms: {
+    uStart: { value: new THREE.Vector2() },
+    uEnd: { value: new THREE.Vector2() },
+    uAnimationTime: { value: 10.0 },
+  },
+});
+const slash = new THREE.Mesh(slashGeometry, slashMaterial);
+scene.add(slash);
 
 /**
  * Loading overlay
@@ -1200,6 +1276,7 @@ const tick = () => {
     timeTracker.deltaTime = debugObject.timeSpeed * clock.getDelta();
     timeTracker.elapsedTime = timeTracker.elapsedTime + timeTracker.deltaTime;
   }
+  slashMaterial.uniforms.uAnimationTime.value += timeTracker.deltaTime;
 
   // cut
   const randomCutCount = 0;
