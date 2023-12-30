@@ -482,6 +482,10 @@ class HalfEdge {
       console.log(this, next);
       throw new Error("End doesn't match start");
     }
+    if (next.next === this) {
+      console.log(this, next);
+      throw new Error("creating 2 length loop");
+    }
     if (this.next !== null && this.next !== next) {
       this.next.prev = null;
     }
@@ -510,13 +514,25 @@ class DcelMesh {
     return this.vertices[index].clone();
   }
 
-  index(start, end) {
-    return start.toString() + "+" + end.toString();
+  getEdges() {
+    const edges = [];
+    const it = this.edgeMap.values();
+    let v = it.next();
+    while (!v.done) {
+      const it2 = v.value.values();
+      let v2 = it2.next();
+      while (!v2.done) {
+        edges.push(v2.value);
+        v2 = it2.next();
+      }
+      v = it.next();
+    }
+    return edges;
   }
 
   getEdge(start, end) {
-    let index = this.index(start, end);
-    return this.edges.get(index);
+    const m = this.edgeMap.get(start);
+    return !m ? m : m.get(end);
   }
 
   addNormalizedVertex(vertex) {
@@ -540,13 +556,15 @@ class DcelMesh {
       console.log(edge);
       throw new Error("Inserting edge with same start/end");
     }
-    let index = this.index(edge.start, edge.end);
-    if (this.edges.has(index)) {
+    if (this.getEdge(edge.start, edge.end)) {
       console.log(edge);
       console.log(this.getEdge(edge.start, edge.end));
       throw new Error("Inserting duplicate edge");
     }
-    this.edges.set(index, edge);
+    if (!this.edgeMap.has(edge.start)) {
+      this.edgeMap.set(edge.start, new Map());
+    }
+    this.edgeMap.get(edge.start).set(edge.end, edge);
     let twin = this.getEdge(edge.end, edge.start);
     if (twin) {
       twin.twin = edge;
@@ -565,8 +583,10 @@ class DcelMesh {
         console.log(edge.prev, edge, edge.next);
         throw new Error("Deleted edge with next");
       }
-      const index = this.index(edge.start, edge.end);
-      this.edges.delete(index);
+      this.edgeMap.get(edge.start).delete(edge.end);
+      if (!this.edgeMap.get(edge.start).size) {
+        this.edgeMap.delete(edge.start);
+      }
       let twin = this.getEdge(edge.end, edge.start);
       if (twin) {
         twin.twin = null;
@@ -589,7 +609,7 @@ class DcelMesh {
 
   // this removes any edges that are in a larger plane
   removeInnerEdges() {
-    const edges = Array.from(this.edges.values());
+    const edges = this.getEdges();
     // find clusters of edges which have the same normal and are linked
     const clusters = [];
     const it = new DebugIterator(100000);
@@ -637,7 +657,7 @@ class DcelMesh {
   }
 
   removeColinearPoints() {
-    let mColinearEdge = Array.from(this.edges.values())
+    let mColinearEdge = this.getEdges()
       .filter((e) => this.getCross(e).length() <= epslion)
       .pop();
     const it = new DebugIterator(100000);
@@ -652,7 +672,7 @@ class DcelMesh {
       // colinear - remove the edge and its twin, and redirect
       // the edges connected to it
 
-      const edgesStarting = Array.from(this.edges.values()).filter(
+      const edgesStarting = this.getEdges().filter(
         (e) => e.start === start && e.end !== end
       );
 
@@ -672,7 +692,7 @@ class DcelMesh {
         }
       });
 
-      const edgesEnding = Array.from(this.edges.values()).filter(
+      const edgesEnding = this.getEdges().filter(
         (e) => e.start !== end && e.end === start
       );
 
@@ -688,7 +708,7 @@ class DcelMesh {
           }
         }
       });
-      mColinearEdge = Array.from(this.edges.values())
+      mColinearEdge = this.getEdges()
         .filter((e) => this.getCross(e).length() <= epslion)
         .pop();
     }
@@ -699,7 +719,7 @@ class DcelMesh {
       .reduce((acc, v) => acc.add(v), new THREE.Vector3())
       .multiplyScalar(1 / this.vertices.length);
 
-    const edgeToParse = Array.from(this.edges.values());
+    const edgeToParse = this.getEdges();
 
     const faces = [];
     while (edgeToParse.length > 0) {
@@ -752,7 +772,7 @@ class DcelMesh {
 
   constructor(facesVertices) {
     this.vertices = [];
-    this.edges = new Map();
+    this.edgeMap = new Map();
 
     for (const face of facesVertices) {
       const vIndices = [];
@@ -777,9 +797,7 @@ class DcelMesh {
   }
 
   validatePrev(validationName) {
-    let missingPrev = Array.from(this.edges.values()).filter(
-      (e) => e.prev === null
-    );
+    let missingPrev = this.getEdges().filter((e) => e.prev === null);
     if (missingPrev.length > 0) {
       console.log(validationName, this);
       console.log(validationName, "Missing prev:", missingPrev);
@@ -788,9 +806,7 @@ class DcelMesh {
   }
 
   validateNext(validationName) {
-    let missingNext = Array.from(this.edges.values()).filter(
-      (e) => e.next === null
-    );
+    let missingNext = this.getEdges().filter((e) => e.next === null);
     if (missingNext.length > 0) {
       console.log(validationName, this);
       console.log(validationName, "Missing next:", missingNext);
@@ -799,7 +815,7 @@ class DcelMesh {
   }
 
   validateNoColinear(validationName) {
-    const eLength = Array.from(this.edges.values()).map((e) => {
+    const eLength = this.getEdges().map((e) => {
       return [
         e,
         this.getCross(e).length(),
@@ -819,15 +835,9 @@ class DcelMesh {
   }
 
   validate(validationName) {
-    let missingNext = Array.from(this.edges.values()).filter(
-      (e) => e.next === null
-    );
-    let missingPrev = Array.from(this.edges.values()).filter(
-      (e) => e.prev === null
-    );
-    let missingTwin = Array.from(this.edges.values()).filter(
-      (e) => e.twin === null
-    );
+    let missingNext = this.getEdges().filter((e) => e.next === null);
+    let missingPrev = this.getEdges().filter((e) => e.prev === null);
+    let missingTwin = this.getEdges().filter((e) => e.twin === null);
     if (
       missingTwin.length > 0 ||
       missingPrev.length > 0 ||
@@ -857,7 +867,7 @@ class DcelMesh {
   // inserts breaks in every edges where the plane would cut the edge in two
   insertPoints(plane) {
     this.checkDuplicatePoints("Before InsertPoints");
-    Array.from(this.edges.values())
+    this.getEdges()
       .filter((e) => {
         return plane.cuts(this.getVertex(e.start), this.getVertex(e.end));
       })
@@ -903,7 +913,7 @@ class DcelMesh {
         it2.tick();
         loop.push(mNextV);
         vIndices.splice(vIndices.indexOf(mNextV), 1);
-        mNextV = Array.from(this.edges.values())
+        mNextV = this.getEdges()
           .filter((e) => e.start === mNextV)
           .map((e) => e.getLoop())
           .map((loop) =>
@@ -932,7 +942,7 @@ class DcelMesh {
         const end = loop[(i + 1) % loop.length];
         // find the face containing both start and end
         const edge = this.getEdge(start, end);
-        const face = Array.from(this.edges.values())
+        const face = this.getEdges()
           .filter((e) => e.start === start)
           .map((e) => e.getLoop())
           .filter((loop) => loop.filter((e) => e.start === end).length > 0)
@@ -972,7 +982,7 @@ class DcelMesh {
   cutLoops(plane) {
     this.validate("Before cutLoops");
     const edges = Array.from(
-      Array.from(this.edges.values()).filter(
+      this.getEdges().filter(
         (e) =>
           plane.onPlane(this.getVertex(e.start)) &&
           plane.onPlane(this.getVertex(e.end))
@@ -1078,7 +1088,7 @@ class DcelMesh {
 
   // Gets arrays of edges that are connected
   edgeClusters() {
-    const edges = Array.from(this.edges.values());
+    const edges = this.getEdges();
     const clusters = [];
     const it = new DebugIterator(100000);
     while (edges.length) {
@@ -1170,7 +1180,7 @@ class DcelMesh {
   toVerticesIndices() {
     const traversedEdges = [];
     var indices = [];
-    for (let edge of this.edges.values()) {
+    for (let edge of this.getEdges()) {
       if (traversedEdges.includes(edge)) {
         continue;
       }
