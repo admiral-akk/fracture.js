@@ -12,6 +12,7 @@ import slashFragmentShader from "./shaders/slash/fragment.glsl";
 import { gsap } from "gsap";
 import Stats from "stats-js";
 import { TextGeometry } from "three/examples/jsm/geometries/TextGeometry.js";
+import { ConvexHull } from "three/examples/jsm/math/ConvexHull.js";
 
 /**
  * Debug iterator
@@ -54,9 +55,9 @@ document.body.appendChild(stats.dom);
  * Setup camera
  */
 const camera = new THREE.PerspectiveCamera(75, sizes.width / sizes.height);
-camera.position.x = 3;
-camera.position.y = 3;
-camera.position.z = 3;
+camera.position.x = 0;
+camera.position.y = 0;
+camera.position.z = 5;
 scene.add(camera);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enabled = false;
@@ -278,7 +279,18 @@ const matcapTexture = textureLoader.load("./matcap01.png");
 const fonts = [];
 fontLoader.load("./fonts/helvetiker_regular.typeface.json", function (font) {
   fonts.push(font);
+
+  const geometry = new TextGeometry("SLICE TO START", {
+    font: font,
+    size: 0.5,
+    height: 0.05,
+    curveSegments: 1,
+    bevelEnabled: false,
+  });
+  geometry.center();
+  geoToDecl(geometry);
 });
+
 /**
  * Sound
  */
@@ -774,14 +786,16 @@ class DcelMesh {
         const c = v3.distanceTo(v1);
         const s = (a + b + c) / 2;
         const baseArea = Math.sqrt(s * (s - a) * (s - b) * (s - c));
-        const baseNormal = v1
-          .clone()
-          .sub(v2)
-          .cross(v3.clone().sub(v2))
-          .normalize();
-        const height = averagePoint.clone().sub(v2).dot(baseNormal);
-        const volume = (baseArea * height) / 3;
-        centroids.push([centroid, volume]);
+        const cross = v1.clone().sub(v2).cross(v3.clone().sub(v2));
+        if (cross.length() <= epslion) {
+          // colinear
+          centroids.push([centroid, 0]);
+        } else {
+          const baseNormal = cross.normalize();
+          const height = averagePoint.clone().sub(v2).dot(baseNormal);
+          const volume = (baseArea * height) / 3;
+          centroids.push([centroid, volume]);
+        }
       }
     }
 
@@ -806,12 +820,12 @@ class DcelMesh {
       this.addFace(vIndices);
     }
 
-    this.removeInnerEdges();
-    this.removeColinearPoints();
+    //this.removeInnerEdges();
+    //this.removeColinearPoints();
 
     this.checkDuplicatePoints("Constructor");
     this.validate("Constructor");
-    this.validateNoColinear("Constructor");
+    //this.validateNoColinear("Constructor");
 
     const cV = this.calculateCentroid();
 
@@ -1247,6 +1261,7 @@ const updatePlane = (position, normal) => {
 const root = new THREE.Group();
 root.position.set(0, 0, 0);
 scene.add(root);
+
 const geoToDecl = (geometry) => {
   const indices = geometry.index;
   const positions = geometry.attributes.position;
@@ -1269,6 +1284,7 @@ const geoToDecl = (geometry) => {
       ]);
     }
   }
+
   const decl = new DcelMesh(facesVertices);
   const b = decl.break();
   const decls = b ? b.map((faces) => new DcelMesh(faces)) : [decl];
@@ -1284,7 +1300,8 @@ const geoToDecl = (geometry) => {
 const makeMesh = (
   decl,
   pos = new THREE.Vector3(),
-  targetPos = new THREE.Vector3()
+  targetPos = new THREE.Vector3(),
+  shouldRemove = false
 ) => {
   const boxG = new THREE.BufferGeometry();
   const vertices = decl.toVertices();
@@ -1302,16 +1319,20 @@ const makeMesh = (
   root.add(mesh);
   mesh.position.set(pos.x, pos.y, pos.z);
   mesh.targetPos = targetPos.clone();
+
   gsap.to(mesh.position, {
     duration: 1.5,
     x: targetPos.x,
     y: targetPos.y,
     z: targetPos.z,
     ease: "elastic.out",
+    onComplete: () => {
+      if (shouldRemove) {
+        root.remove(mesh);
+      }
+    },
   });
 };
-
-geoToDecl(new THREE.BoxGeometry());
 const cutMesh = (mesh, plane) => {
   mesh.decl.cut(plane);
   const mFaces = mesh.decl.break();
@@ -1322,18 +1343,17 @@ const cutMesh = (mesh, plane) => {
   mFaces.forEach((faces) => {
     const decl = new DcelMesh(faces);
     const average = decl.centerOfMass.clone();
+    const norm = cutMe.worldLookAt();
+    norm.z = 0;
+    const dir = Math.sign(average.dot(norm));
     decl.vertices.forEach((v) => v.sub(average));
     decl.centerOfMass.sub(average);
-    const distanceScale = 2.5;
+    const distanceScale = decl.volume < 0.001 ? 4.0 : 1.0;
     const pos = mesh.targetPos
       .clone()
-      .multiplyScalar(1 / distanceScale)
-      .add(average);
-    makeMesh(
-      decl,
-      mesh.position.clone(),
-      pos.clone().multiplyScalar(distanceScale)
-    );
+      .add(average)
+      .add(norm.normalize().multiplyScalar(dir * distanceScale));
+    makeMesh(decl, mesh.position.clone(), pos.clone(), true);
   });
   root.remove(mesh);
 };
@@ -1400,7 +1420,7 @@ const tick = () => {
   // update controls
   controls.update();
   if (mouse.lastHit > 0.6) {
-    rotateRoot(timeTracker.deltaTime);
+    //rotateRoot(timeTracker.deltaTime);
   }
 
   // Render scene
