@@ -58,7 +58,7 @@ document.body.appendChild(stats.dom);
 /**
  * Setup camera
  */
-const camera = new THREE.PerspectiveCamera(55, sizes.width / sizes.height);
+const camera = new THREE.PerspectiveCamera(55, 16 / 9);
 camera.position.x = 0;
 camera.position.y = 0;
 camera.position.z = 5;
