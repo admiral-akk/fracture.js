@@ -45,6 +45,8 @@ class DebugIterator {
 const sizes = {
   width: window.innerWidth,
   height: window.innerHeight,
+  verticalOffset: 0,
+  horizontalOffset: 0,
 };
 const canvas = document.querySelector("canvas.webgl");
 const renderer = new THREE.WebGLRenderer({ canvas });
@@ -91,8 +93,8 @@ scene.add(line);
 
 const mousePos = (event) => {
   return new THREE.Vector2(
-    (event.clientX / window.innerWidth) * 2 - 1,
-    -(event.clientY / window.innerHeight) * 2 + 1
+    ((event.clientX - sizes.horizontalOffset) / sizes.width) * 2 - 1,
+    -((event.clientY - sizes.verticalOffset) / sizes.height) * 2 + 1
   );
 };
 
@@ -105,8 +107,8 @@ const calculatePlane = () => {
   const startVector = new THREE.Vector3(
     mouse.start.x * camera.aspect,
     mouse.start.y,
-    // no idea why -1.3 works here. BUT IT WORKS.
-    -1.3
+    // no idea why -1.9 works here. BUT IT WORKS.
+    -1.9
   ).applyQuaternion(camera.quaternion);
 
   const endVector = new THREE.Vector3(
@@ -114,7 +116,7 @@ const calculatePlane = () => {
     mouse.end.x === mouse.start.x && mouse.end.y === mouse.start.y
       ? 0.5
       : mouse.end.y,
-    -1.3
+    -1.9
   ).applyQuaternion(camera.quaternion);
 
   const normal = startVector.clone().cross(endVector).normalize();
@@ -147,10 +149,10 @@ window.addEventListener("pointermove", (event) => {
   if (
     event.target.className !== "webgl" ||
     !mouse.start ||
-    event.clientY <= 0 ||
-    event.clientX <= 0 ||
-    event.clientX >= window.innerWidth ||
-    event.clientY >= window.innerHeight
+    event.clientY <= sizes.verticalOffset ||
+    event.clientX <= sizes.horizontalOffset ||
+    event.clientX >= sizes.width + sizes.horizontalOffset ||
+    event.clientY >= sizes.height + sizes.verticalOffset
   ) {
     mouse.start = null;
     mouse.end = null;
@@ -334,16 +336,16 @@ const updateSize = () => {
   if (window.innerHeight * camera.aspect > window.innerWidth) {
     sizes.width = window.innerWidth;
     sizes.height = window.innerWidth / camera.aspect;
-    canvas.style.top =
-      ((window.innerHeight - sizes.height) / 2).toString() + "px";
-    canvas.style.left = 0;
+    sizes.verticalOffset = (window.innerHeight - sizes.height) / 2;
+    sizes.horizontalOffset = 0;
   } else {
     sizes.width = window.innerHeight * camera.aspect;
     sizes.height = window.innerHeight;
-    canvas.style.top = 0;
-    canvas.style.left =
-      ((window.innerWidth - sizes.width) / 2).toString() + "px";
+    sizes.verticalOffset = 0;
+    sizes.horizontalOffset = (window.innerWidth - sizes.width) / 2;
   }
+  canvas.style.top = sizes.verticalOffset.toString() + "px";
+  canvas.style.left = sizes.horizontalOffset.toString() + "px";
 
   // Render
   renderer.setSize(sizes.width, sizes.height);
@@ -1568,7 +1570,7 @@ const tick = () => {
   }
   // update controls
   controls.update();
-  if (mouse.lastHit > 0.4) {
+  if (mouse.lastHit > -1) {
     rotateRoot(timeTracker.deltaTime);
   }
   // Render scene
