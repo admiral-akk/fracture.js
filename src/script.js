@@ -445,9 +445,7 @@ class Plane {
   }
 
   onPlane(vertex) {
-    return (
-      Math.abs(vertex.clone().sub(this.position).dot(this.normal)) <= epslion
-    );
+    return Math.abs(this.signedDistance(vertex)) <= epslion;
   }
 
   intersection(start, end) {
@@ -473,6 +471,10 @@ class Plane {
       !this.onPlane(start) &&
       !this.onPlane(end)
     );
+  }
+
+  signedDistance(vertex) {
+    return vertex.clone().sub(this.position).dot(this.normal);
   }
 }
 
@@ -1194,7 +1196,23 @@ class DcelMesh {
     this.chainEdges(edges);
   }
 
-  cut(plane) {
+  margin(plane) {
+    const distances = this.vertices.map((v) => plane.signedDistance(v));
+
+    const posDistance = distances
+      .filter((v) => v >= 0)
+      .reduce((dist, acc) => Math.max(acc, dist), -100);
+    const negDistance = distances
+      .filter((v) => v <= 0)
+      .reduce((dist, acc) => Math.min(acc, dist), 100);
+
+    return Math.min(-negDistance, posDistance);
+  }
+
+  cut(plane, marginThreshold = 0.05) {
+    if (this.margin(plane) < marginThreshold) {
+      return;
+    }
     this.insertPoints(plane);
     this.insertLoops(plane);
     this.cutLoops(plane);
