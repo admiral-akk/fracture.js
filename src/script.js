@@ -5,8 +5,6 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader";
 import { FontLoader } from "three/addons/loaders/FontLoader.js";
 import GUI from "lil-gui";
-import slashVertexShader from "./shaders/slash/vertex.glsl";
-import slashFragmentShader from "./shaders/slash/fragment.glsl";
 import screenSlashVertexShader from "./shaders/screenSlash/vertex.glsl";
 import screenSlashFragmentShader from "./shaders/screenSlash/fragment.glsl";
 import dissolveVertexShader from "./shaders/dissolve/vertex.glsl";
