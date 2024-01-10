@@ -288,7 +288,32 @@ fontLoader.load("./fonts/helvetiker_regular.typeface.json", function (font) {
     bevelEnabled: false,
   });
   geometry.center();
-  geoToDecl(geometry);
+
+  geoToDecl(geometry, (oldMesh, newMesh, cutPlane) => {
+    let cutNormal = cutPlane.worldLookAt();
+    cutNormal.z = 0;
+    const newOffset = newMesh.offset;
+    const newVolume = newMesh.decl.volume;
+    const oldTarget = oldMesh.decl.targetPos;
+    const distanceScale = newVolume < 0.001 ? 4.0 : 1.0;
+    const dir = Math.sign(newOffset.dot(cutNormal));
+    const newTarget = oldTarget
+      .clone()
+      .add(newOffset)
+      .add(cutNormal.normalize().multiplyScalar(dir * distanceScale));
+
+    newMesh.decl.targetPos = newTarget;
+    gsap.to(newMesh.position, {
+      duration: 1.5,
+      x: newTarget.x,
+      y: newTarget.y,
+      z: newTarget.z,
+      ease: "elastic.out",
+      onComplete: () => {
+        root.remove(newMesh);
+      },
+    });
+  });
 });
 
 /**
@@ -1280,7 +1305,7 @@ const root = new THREE.Group();
 root.position.set(0, 0, 0);
 scene.add(root);
 
-const geoToDecl = (geometry) => {
+const geoToDecl = (geometry, onCut) => {
   const indices = geometry.index;
   const positions = geometry.attributes.position;
   const v = new THREE.Vector3();
@@ -1311,16 +1336,13 @@ const geoToDecl = (geometry) => {
     const average = d.centerOfMass.clone();
     d.vertices.forEach((v) => v.sub(average));
     d.centerOfMass.sub(average);
-    makeMesh(d, average, average);
+    d.targetPos = average;
+    const m = makeMesh(d, average, onCut);
+    m.offset = average;
   }
 };
 
-const makeMesh = (
-  decl,
-  pos = new THREE.Vector3(),
-  targetPos = new THREE.Vector3(),
-  shouldRemove = false
-) => {
+const makeMesh = (decl, pos = new THREE.Vector3(), onCut) => {
   const boxG = new THREE.BufferGeometry();
   const vertices = decl.toVertices();
   const verticesArray = new Float32Array(vertices.length * 3);
@@ -1333,24 +1355,13 @@ const makeMesh = (
   const material = new THREE.MeshMatcapMaterial({ matcap: matcapTexture });
   const mesh = new THREE.Mesh(boxG, material);
   mesh.decl = decl;
+  mesh.onCut = onCut;
   mesh.layers.enable(1);
   root.add(mesh);
   mesh.position.set(pos.x, pos.y, pos.z);
-  mesh.targetPos = targetPos.clone();
-
-  gsap.to(mesh.position, {
-    duration: 1.5,
-    x: targetPos.x,
-    y: targetPos.y,
-    z: targetPos.z,
-    ease: "elastic.out",
-    onComplete: () => {
-      if (shouldRemove) {
-        root.remove(mesh);
-      }
-    },
-  });
+  return mesh;
 };
+
 const cutMesh = (mesh, plane) => {
   mesh.decl.cut(plane);
   const mFaces = mesh.decl.break();
@@ -1361,17 +1372,13 @@ const cutMesh = (mesh, plane) => {
   mFaces.forEach((faces) => {
     const decl = new DcelMesh(faces);
     const average = decl.centerOfMass.clone();
-    const norm = cutMe.worldLookAt();
-    norm.z = 0;
-    const dir = Math.sign(average.dot(norm));
     decl.vertices.forEach((v) => v.sub(average));
     decl.centerOfMass.sub(average);
-    const distanceScale = decl.volume < 0.001 ? 4.0 : 1.0;
-    const pos = mesh.targetPos
-      .clone()
-      .add(average)
-      .add(norm.normalize().multiplyScalar(dir * distanceScale));
-    makeMesh(decl, mesh.position.clone(), pos.clone(), true);
+    const m = makeMesh(decl, mesh.position.clone(), mesh.onCut, true);
+    if (mesh.onCut) {
+      m.offset = average;
+      mesh.onCut(mesh, m, cutMe);
+    }
   });
   root.remove(mesh);
 };
