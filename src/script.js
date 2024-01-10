@@ -295,7 +295,10 @@ fontLoader.load("./fonts/helvetiker_regular.typeface.json", function (font) {
     size: 0.5,
     height: 0.05,
     curveSegments: 1,
-    bevelEnabled: false,
+    bevelEnabled: true,
+    bevelSize: 0.02,
+    bevelSegments: 1,
+    bevelThickness: 0.05,
   });
   geometry.center();
   geoToDecl(geometry, onStartCut);
@@ -1324,6 +1327,7 @@ const geoToDecl = (geometry, onCut) => {
     d.vertices.forEach((v) => v.sub(average));
     d.centerOfMass.sub(average);
     d.targetPos = average;
+    average.multiplyScalar(1.1);
     const m = makeMesh(d, average, onCut);
     m.offset = average;
   }
@@ -1335,7 +1339,7 @@ const onStartCut = (oldMesh, newMesh, cutPlane) => {
   const newOffset = newMesh.offset;
   const newVolume = newMesh.decl.volume;
   const oldTarget = oldMesh.decl.targetPos;
-  const cutEnough = newVolume < 0.0015;
+  const cutEnough = newVolume < 0.008;
   const dir = Math.sign(newOffset.dot(cutNormal));
   const newTarget = oldTarget
     .clone()
@@ -1372,7 +1376,6 @@ const makeMesh = (decl, pos, onCut) => {
   boxG.setAttribute("position", new THREE.BufferAttribute(verticesArray, 3));
   boxG.computeVertexNormals();
   boxG.computeBoundingBox();
-  const material2 = new THREE.MeshMatcapMaterial({ matcap: matcapTexture });
   const material = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
