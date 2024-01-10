@@ -12,7 +12,6 @@ import slashFragmentShader from "./shaders/slash/fragment.glsl";
 import { gsap } from "gsap";
 import Stats from "stats-js";
 import { TextGeometry } from "three/examples/jsm/geometries/TextGeometry.js";
-import { ConvexHull } from "three/examples/jsm/math/ConvexHull.js";
 
 /**
  * Debug iterator
@@ -279,7 +278,6 @@ const matcapTexture = textureLoader.load("./matcap01.png");
 const fonts = [];
 fontLoader.load("./fonts/helvetiker_regular.typeface.json", function (font) {
   fonts.push(font);
-
   const geometry = new TextGeometry("SLICE TO START", {
     font: font,
     size: 0.5,
@@ -288,32 +286,7 @@ fontLoader.load("./fonts/helvetiker_regular.typeface.json", function (font) {
     bevelEnabled: false,
   });
   geometry.center();
-
-  geoToDecl(geometry, (oldMesh, newMesh, cutPlane) => {
-    let cutNormal = cutPlane.worldLookAt();
-    cutNormal.z = 0;
-    const newOffset = newMesh.offset;
-    const newVolume = newMesh.decl.volume;
-    const oldTarget = oldMesh.decl.targetPos;
-    const distanceScale = newVolume < 0.001 ? 4.0 : 1.0;
-    const dir = Math.sign(newOffset.dot(cutNormal));
-    const newTarget = oldTarget
-      .clone()
-      .add(newOffset)
-      .add(cutNormal.normalize().multiplyScalar(dir * distanceScale));
-
-    newMesh.decl.targetPos = newTarget;
-    gsap.to(newMesh.position, {
-      duration: 1.5,
-      x: newTarget.x,
-      y: newTarget.y,
-      z: newTarget.z,
-      ease: "elastic.out",
-      onComplete: () => {
-        root.remove(newMesh);
-      },
-    });
-  });
+  geoToDecl(geometry, onStartCut);
 });
 
 /**
@@ -1342,7 +1315,39 @@ const geoToDecl = (geometry, onCut) => {
   }
 };
 
-const makeMesh = (decl, pos = new THREE.Vector3(), onCut) => {
+const onStartCut = (oldMesh, newMesh, cutPlane) => {
+  let cutNormal = cutPlane.worldLookAt();
+  cutNormal.z = 0;
+  const newOffset = newMesh.offset;
+  const newVolume = newMesh.decl.volume;
+  const oldTarget = oldMesh.decl.targetPos;
+  const cutEnough = newVolume < 0.0015;
+  const dir = Math.sign(newOffset.dot(cutNormal));
+  const newTarget = oldTarget
+    .clone()
+    .add(newOffset)
+    .add(cutNormal.normalize().multiplyScalar(0.1 * dir));
+
+  if (cutEnough) {
+    newMesh.canCut = false;
+  }
+
+  newMesh.decl.targetPos = newTarget;
+  gsap.to(newMesh.position, {
+    duration: 1.5,
+    x: newTarget.x,
+    y: newTarget.y,
+    z: newTarget.z,
+    ease: "elastic.out",
+    onComplete: () => {
+      if (cutEnough) {
+        root.remove(newMesh);
+      }
+    },
+  });
+};
+
+const makeMesh = (decl, pos, onCut) => {
   const boxG = new THREE.BufferGeometry();
   const vertices = decl.toVertices();
   const verticesArray = new Float32Array(vertices.length * 3);
@@ -1359,10 +1364,14 @@ const makeMesh = (decl, pos = new THREE.Vector3(), onCut) => {
   mesh.layers.enable(1);
   root.add(mesh);
   mesh.position.set(pos.x, pos.y, pos.z);
+  mesh.canCut = true;
   return mesh;
 };
 
 const cutMesh = (mesh, plane) => {
+  if (!mesh.canCut) {
+    return;
+  }
   mesh.decl.cut(plane);
   const mFaces = mesh.decl.break();
   if (!mFaces) {
