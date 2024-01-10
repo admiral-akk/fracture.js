@@ -334,8 +334,22 @@ const updateSize = () => {
   sizes.width = window.innerWidth;
   sizes.height = window.innerHeight;
 
-  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.aspect = 16 / 9; // window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
+
+  if (window.innerHeight * camera.aspect > window.innerWidth) {
+    sizes.width = window.innerWidth;
+    sizes.height = window.innerWidth / camera.aspect;
+    canvas.style.top =
+      ((window.innerHeight - sizes.height) / 2).toString() + "px";
+    canvas.style.left = 0;
+  } else {
+    sizes.width = window.innerHeight * camera.aspect;
+    sizes.height = window.innerHeight;
+    canvas.style.top = 0;
+    canvas.style.left =
+      ((window.innerWidth - sizes.width) / 2).toString() + "px";
+  }
 
   // Render
   renderer.setSize(sizes.width, sizes.height);
