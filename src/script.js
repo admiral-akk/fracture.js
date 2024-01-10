@@ -301,7 +301,7 @@ fontLoader.load("./fonts/helvetiker_regular.typeface.json", function (font) {
     bevelThickness: 0.05,
   });
   geometry.center();
-  geoToDecl(geometry, onStartCut);
+  geoToDecl(geometry, dissolveThresholdCut(0.008));
 });
 
 /**
@@ -1333,37 +1333,62 @@ const geoToDecl = (geometry, onCut) => {
   }
 };
 
-const onStartCut = (oldMesh, newMesh, cutPlane) => {
-  let cutNormal = cutPlane.worldLookAt();
-  cutNormal.z = 0;
-  const newOffset = newMesh.offset;
-  const newVolume = newMesh.decl.volume;
-  const oldTarget = oldMesh.decl.targetPos;
-  const cutEnough = newVolume < 0.008;
-  const dir = Math.sign(newOffset.dot(cutNormal));
-  const newTarget = oldTarget
-    .clone()
-    .add(newOffset)
-    .add(cutNormal.normalize().multiplyScalar(0.1 * dir));
-
-  if (cutEnough) {
-    newMesh.canCut = false;
-    newMesh.material.uniforms.uFading.value = true;
+const randomGeo = () => {
+  const rand = Math.random();
+  switch (Math.floor(rand * 4)) {
+    default:
+    case 0:
+      return new THREE.BoxGeometry();
+    case 1:
+      return new THREE.CylinderGeometry();
+    case 2:
+      return new THREE.TetrahedronGeometry();
+    case 3:
+      return new THREE.SphereGeometry();
   }
+};
 
-  newMesh.decl.targetPos = newTarget;
-  gsap.to(newMesh.position, {
-    duration: 1.5,
-    x: newTarget.x,
-    y: newTarget.y,
-    z: newTarget.z,
-    ease: "elastic.out",
-    onComplete: () => {
-      if (cutEnough) {
-        root.remove(newMesh);
-      }
-    },
-  });
+const triggerPieceChallenge = () => {
+  const box = randomGeo();
+  geoToDecl(box, dissolveThresholdCut(0.4));
+};
+
+const dissolveThresholdCut = (threshold) => {
+  return (oldMesh, newMesh, cutPlane) => {
+    let cutNormal = cutPlane.worldLookAt();
+    cutNormal.z = 0;
+    const newOffset = newMesh.offset;
+    const newVolume = newMesh.decl.volume;
+    const oldTarget = oldMesh.decl.targetPos;
+    const cutEnough = newVolume < threshold;
+    const dir = Math.sign(newOffset.dot(cutNormal));
+    const newTarget = oldTarget
+      .clone()
+      .add(newOffset)
+      .add(cutNormal.normalize().multiplyScalar(0.1 * dir));
+
+    if (cutEnough) {
+      newMesh.canCut = false;
+      newMesh.material.uniforms.uFading.value = true;
+    }
+
+    newMesh.decl.targetPos = newTarget;
+    gsap.to(newMesh.position, {
+      duration: 1.5,
+      x: newTarget.x,
+      y: newTarget.y,
+      z: newTarget.z,
+      ease: "elastic.out",
+      onComplete: () => {
+        if (cutEnough) {
+          root.remove(newMesh);
+        }
+        if (root.children.length === 0) {
+          triggerPieceChallenge();
+        }
+      },
+    });
+  };
 };
 
 const makeMesh = (decl, pos, onCut) => {
@@ -1378,7 +1403,7 @@ const makeMesh = (decl, pos, onCut) => {
   boxG.computeBoundingBox();
   const material = new THREE.ShaderMaterial({
     transparent: true,
-    depthWrite: false,
+    depthWrite: true,
     blending: THREE.NormalBlending,
     vertexShader: dissolveVertexShader,
     fragmentShader: dissolveFragmentShader,
@@ -1520,8 +1545,8 @@ const tick = () => {
   }
   // update controls
   controls.update();
-  if (mouse.lastHit > 0.6) {
-    //rotateRoot(timeTracker.deltaTime);
+  if (mouse.lastHit > 0.4) {
+    rotateRoot(timeTracker.deltaTime);
   }
   // Render scene
   composer.render();
