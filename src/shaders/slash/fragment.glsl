@@ -1,7 +1,7 @@
 uniform vec2 uStart;
 uniform vec2 uEnd;
-uniform float uAnimationTime;
 varying vec2 vUv;
+varying float vAnimationTime;
 void main()
 {
    vec2 dUv = vUv - uStart;
@@ -15,7 +15,7 @@ void main()
    float falloff = 1. - (tightness*distance - tFactor*abs(t - 0.5)) ;
    float distanceToLine = clamp(falloff,0.,1.);
 
-   float animationFade = clamp(1.2* exp(1.-6.*(uAnimationTime)+0.3*t) - 0.1,0.,1.);
-   float animationDelay =step(t, 15.*uAnimationTime);   
+   float animationFade = clamp(1.2* exp(1.-6.*(vAnimationTime)+0.3*t) - 0.1,0.,1.);
+   float animationDelay =step(t, 15.*vAnimationTime);   
    gl_FragColor = vec4(1.,1., 1., animationFade * distanceToLine * animationDelay);
 }

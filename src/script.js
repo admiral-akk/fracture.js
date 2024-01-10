@@ -5,13 +5,18 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader";
 import { FontLoader } from "three/addons/loaders/FontLoader.js";
 import GUI from "lil-gui";
-import overlayVertexShader from "./shaders/overlay/vertex.glsl";
-import overlayFragmentShader from "./shaders/overlay/fragment.glsl";
 import slashVertexShader from "./shaders/slash/vertex.glsl";
 import slashFragmentShader from "./shaders/slash/fragment.glsl";
+import dissolveVertexShader from "./shaders/dissolve/vertex.glsl";
+import dissolveFragmentShader from "./shaders/dissolve/fragment.glsl";
+import loadingVertexShader from "./shaders/loading/vertex.glsl";
+import loadingFragmentShader from "./shaders/loading/fragment.glsl";
 import { gsap } from "gsap";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import Stats from "stats-js";
 import { TextGeometry } from "three/examples/jsm/geometries/TextGeometry.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 
 /**
  * Debug iterator
@@ -61,6 +66,13 @@ scene.add(camera);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enabled = false;
 camera.add(listener);
+
+/**
+ * Composer
+ */
+const composer = new EffectComposer(renderer);
+const renderPass = new RenderPass(scene, camera);
+composer.addPass(renderPass);
 
 /**
  * Mouse tracking
@@ -228,7 +240,8 @@ window.addEventListener("pointerup", (event) => {
     const uEnd = p2.clone().add(d2.clone().multiplyScalar(end));
     slashMaterial.uniforms.uStart.value = uStart.clone();
     slashMaterial.uniforms.uEnd.value = uEnd.clone();
-    slashMaterial.uniforms.uAnimationTime.value = 0;
+    slashMaterial.uniforms.uSlashTime.value =
+      slashMaterial.uniforms.uTime.value;
     cutMeshUsingPlane();
   }
 
@@ -324,7 +337,9 @@ const updateSize = () => {
 
   // Render
   renderer.setSize(sizes.width, sizes.height);
+  composer.setSize(sizes.width, sizes.height);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 };
 updateSize();
 window.addEventListener("resize", updateSize);
@@ -355,7 +370,9 @@ const slashMaterial = new THREE.ShaderMaterial({
   uniforms: {
     uStart: { value: new THREE.Vector2() },
     uEnd: { value: new THREE.Vector2() },
-    uAnimationTime: { value: 10.0 },
+    uSlashTime: { value: -100.0 },
+    uTime: { value: 0 },
+    uTimeSinceSpawn: { value: 0 },
   },
 });
 const slash = new THREE.Mesh(slashGeometry, slashMaterial);
@@ -364,21 +381,20 @@ scene.add(slash);
 /**
  * Loading overlay
  */
-const overlayGeometry = new THREE.PlaneGeometry(2, 2, 1, 1);
-const overlayMaterial = new THREE.ShaderMaterial({
-  transparent: true,
-  depthWrite: false,
-  blending: THREE.NormalBlending,
-  vertexShader: overlayVertexShader,
-  fragmentShader: overlayFragmentShader,
+const loadingShader = {
   uniforms: {
+    tDiffuse: { value: null },
     uMinY: { value: 0.0 },
     uWidthY: { value: 0.005 },
     uMaxX: { value: 0.0 },
   },
-});
-const overlay = new THREE.Mesh(overlayGeometry, overlayMaterial);
-scene.add(overlay);
+  vertexShader: loadingVertexShader,
+  fragmentShader: loadingFragmentShader,
+};
+
+const loadingScreen = new ShaderPass(loadingShader);
+const loadingUniforms = loadingScreen.material.uniforms;
+composer.addPass(loadingScreen);
 
 /**
  * Loading Animation
@@ -391,29 +407,29 @@ const updateProgress = (progress) => {
   if (currAnimation) {
     currAnimation.kill();
   }
-  currAnimation = gsap.to(overlayMaterial.uniforms.uMaxX, {
+  currAnimation = gsap.to(loadingUniforms.uMaxX, {
     duration: 1,
     value: progressRatio,
   });
   if (progressRatio == 1) {
     currAnimation.kill();
     const timeline = gsap.timeline();
-    currAnimation = timeline.to(overlayMaterial.uniforms.uMaxX, {
+    currAnimation = timeline.to(loadingUniforms.uMaxX, {
       duration: 0.2,
       value: progressRatio,
     });
-    timeline.to(overlayMaterial.uniforms.uWidthY, {
+    timeline.to(loadingUniforms.uWidthY, {
       duration: 0.1,
       delay: 0.0,
       value: 0.01,
       ease: "power1.inOut",
     });
-    timeline.to(overlayMaterial.uniforms.uWidthY, {
+    timeline.to(loadingUniforms.uWidthY, {
       duration: 0.1,
       value: 0.0,
       ease: "power1.in",
     });
-    timeline.to(overlayMaterial.uniforms.uMinY, {
+    timeline.to(loadingUniforms.uMinY, {
       duration: 0.5,
       value: 0.5,
       ease: "power1.in",
@@ -1330,6 +1346,7 @@ const onStartCut = (oldMesh, newMesh, cutPlane) => {
 
   if (cutEnough) {
     newMesh.canCut = false;
+    newMesh.material.uniforms.uFading.value = true;
   }
 
   newMesh.decl.targetPos = newTarget;
@@ -1357,7 +1374,30 @@ const makeMesh = (decl, pos, onCut) => {
   boxG.setAttribute("position", new THREE.BufferAttribute(verticesArray, 3));
   boxG.computeVertexNormals();
   boxG.computeBoundingBox();
-  const material = new THREE.MeshMatcapMaterial({ matcap: matcapTexture });
+  const material2 = new THREE.MeshMatcapMaterial({ matcap: matcapTexture });
+  const material = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.NormalBlending,
+    vertexShader: dissolveVertexShader,
+    fragmentShader: dissolveFragmentShader,
+    uniforms: {
+      uMatcap: {
+        type: "sampler2D",
+        value: matcapTexture,
+      },
+      uTime: {
+        value: timeTracker.elapsedTime,
+      },
+      uTimeSinceSpawn: {
+        value: 0,
+      },
+      uFading: {
+        value: false,
+      },
+    },
+  });
+
   const mesh = new THREE.Mesh(boxG, material);
   mesh.decl = decl;
   mesh.onCut = onCut;
@@ -1429,6 +1469,13 @@ const rotateRoot = (deltaTime) => {
   root.rotateY(deltaTime);
 };
 
+const allChildren = (object) => {
+  const descendants = object.children
+    .map((c) => allChildren(c))
+    .reduce((children, acc) => acc.concat(children), []);
+  return descendants.concat(object.children);
+};
+
 /**
  * Animation
  */
@@ -1440,7 +1487,25 @@ const tick = () => {
     timeTracker.deltaTime = debugObject.timeSpeed * clock.getDelta();
     timeTracker.elapsedTime = timeTracker.elapsedTime + timeTracker.deltaTime;
   }
-  slashMaterial.uniforms.uAnimationTime.value += timeTracker.deltaTime;
+
+  for (const child of allChildren(scene)) {
+    const material = child.material;
+    if (!material) {
+      continue;
+    }
+    const uniforms = material.uniforms;
+    if (!uniforms) {
+      continue;
+    }
+    const uTime = uniforms.uTime;
+    if (uTime) {
+      uTime.value = timeTracker.elapsedTime;
+    }
+    const uTimeSinceSpawn = uniforms.uTimeSinceSpawn;
+    if (uTimeSinceSpawn) {
+      uTimeSinceSpawn.value += timeTracker.deltaTime;
+    }
+  }
   mouse.lastHit += timeTracker.deltaTime;
 
   // cut
@@ -1456,9 +1521,8 @@ const tick = () => {
   if (mouse.lastHit > 0.6) {
     //rotateRoot(timeTracker.deltaTime);
   }
-
   // Render scene
-  renderer.render(scene, camera);
+  composer.render();
 
   // Call tick again on the next frame
   window.requestAnimationFrame(tick);
