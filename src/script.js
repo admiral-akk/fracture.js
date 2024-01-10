@@ -331,12 +331,6 @@ const playSound = () => {
  * Window size
  */
 const updateSize = () => {
-  sizes.width = window.innerWidth;
-  sizes.height = window.innerHeight;
-
-  camera.aspect = 16 / 9; // window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-
   if (window.innerHeight * camera.aspect > window.innerWidth) {
     sizes.width = window.innerWidth;
     sizes.height = window.innerWidth / camera.aspect;
@@ -1238,7 +1232,7 @@ class DcelMesh {
     return Math.min(-negDistance, posDistance);
   }
 
-  cut(plane, marginThreshold = 0.05) {
+  cut(plane, marginThreshold = 0.0) {
     if (this.margin(plane) < marginThreshold) {
       return;
     }
