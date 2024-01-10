@@ -1356,9 +1356,19 @@ const randomGeo = () => {
   }
 };
 
+const portioningChallenge = () => {
+  const geo = randomGeo();
+  geoToDecl(geo, dissolveThresholdCut(0.4));
+};
+
 const triggerPieceChallenge = () => {
-  const box = randomGeo();
-  geoToDecl(box, dissolveThresholdCut(0.4));
+  const geo = randomGeo();
+  geoToDecl(geo, dissolveThresholdCut(0.4));
+};
+
+const gameState = {
+  pieceChallenges: 0,
+  portionChallenges: 0,
 };
 
 const dissolveThresholdCut = (threshold) => {
@@ -1392,7 +1402,13 @@ const dissolveThresholdCut = (threshold) => {
           root.remove(newMesh);
         }
         if (root.children.length === 0) {
-          triggerPieceChallenge();
+          if (gameState.pieceChallenges < 2) {
+            triggerPieceChallenge();
+            gameState.pieceChallenges++;
+          } else {
+            portioningChallenge();
+            gameState.portioningChallenge++;
+          }
         }
       },
     });
@@ -1411,8 +1427,7 @@ const makeMesh = (decl, pos, onCut) => {
   boxG.computeBoundingBox();
   const material = new THREE.ShaderMaterial({
     transparent: true,
-    depthWrite: true,
-    blending: THREE.NormalBlending,
+    depthWrite: false,
     vertexShader: dissolveVertexShader,
     fragmentShader: dissolveFragmentShader,
     uniforms: {
