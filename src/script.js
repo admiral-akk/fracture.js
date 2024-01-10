@@ -7,6 +7,8 @@ import { FontLoader } from "three/addons/loaders/FontLoader.js";
 import GUI from "lil-gui";
 import slashVertexShader from "./shaders/slash/vertex.glsl";
 import slashFragmentShader from "./shaders/slash/fragment.glsl";
+import screenSlashVertexShader from "./shaders/screenSlash/vertex.glsl";
+import screenSlashFragmentShader from "./shaders/screenSlash/fragment.glsl";
 import dissolveVertexShader from "./shaders/dissolve/vertex.glsl";
 import dissolveFragmentShader from "./shaders/dissolve/fragment.glsl";
 import loadingVertexShader from "./shaders/loading/vertex.glsl";
@@ -238,10 +240,9 @@ window.addEventListener("pointerup", (event) => {
 
     const uStart = p2.clone().add(dNeg2.clone().multiplyScalar(start));
     const uEnd = p2.clone().add(d2.clone().multiplyScalar(end));
-    slashMaterial.uniforms.uStart.value = uStart.clone();
-    slashMaterial.uniforms.uEnd.value = uEnd.clone();
-    slashMaterial.uniforms.uSlashTime.value =
-      slashMaterial.uniforms.uTime.value;
+    slashUniforms.uStart.value = uStart.clone();
+    slashUniforms.uEnd.value = uEnd.clone();
+    slashUniforms.uSlashTime.value = timeTracker.elapsedTime;
     cutMeshUsingPlane();
   }
 
@@ -357,26 +358,25 @@ window.addEventListener("dblclick", (event) => {
     canvas.requestFullscreen();
   }
 });
+
 /**
  * Slash overlay
  */
-const slashGeometry = new THREE.PlaneGeometry(2, 2, 1, 1);
-const slashMaterial = new THREE.ShaderMaterial({
-  transparent: true,
-  depthWrite: false,
-  blending: THREE.NormalBlending,
-  vertexShader: slashVertexShader,
-  fragmentShader: slashFragmentShader,
+const slashShader = {
   uniforms: {
+    tDiffuse: { value: null },
     uStart: { value: new THREE.Vector2() },
     uEnd: { value: new THREE.Vector2() },
-    uSlashTime: { value: -100.0 },
     uTime: { value: 0 },
-    uTimeSinceSpawn: { value: 0 },
+    uSlashTime: { value: -100 },
   },
-});
-const slash = new THREE.Mesh(slashGeometry, slashMaterial);
-scene.add(slash);
+  vertexShader: screenSlashVertexShader,
+  fragmentShader: screenSlashFragmentShader,
+};
+
+const slashScreen = new ShaderPass(slashShader);
+const slashUniforms = slashScreen.material.uniforms;
+composer.addPass(slashScreen);
 
 /**
  * Loading overlay
@@ -418,6 +418,7 @@ const updateProgress = (progress) => {
       duration: 0.2,
       value: progressRatio,
     });
+    timeline.set(timeTracker, { enabled: true });
     timeline.to(loadingUniforms.uWidthY, {
       duration: 0.1,
       delay: 0.0,
@@ -434,7 +435,6 @@ const updateProgress = (progress) => {
       value: 0.5,
       ease: "power1.in",
     });
-    timeline.set(timeTracker, { enabled: true });
   }
 };
 
@@ -1506,6 +1506,7 @@ const tick = () => {
       uTimeSinceSpawn.value += timeTracker.deltaTime;
     }
   }
+  slashUniforms.uTime.value = timeTracker.elapsedTime;
   mouse.lastHit += timeTracker.deltaTime;
 
   // cut
