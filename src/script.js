@@ -1158,7 +1158,7 @@ class DcelMesh {
       const queue = [edges[0]];
       let cluster = [];
 
-      const it2 = new DebugIterator(100000);
+      const it2 = new DebugIterator(1000000);
       while (queue.length) {
         it2.tick();
         const edge = queue.pop();

@@ -1,7 +1,7 @@
 uniform sampler2D uMatcap;
 uniform bool uFading;
 uniform float uTimeSinceSpawn;
-varying vec4 vNormal;
+varying vec3 vNormal;
 
 // Variables described here: https://www.khronos.org/opengl/wiki/Built-in_Variable_(GLSL)
 void main()
@@ -14,5 +14,5 @@ void main()
       pow(matcapColor.g,0.45),
       pow(matcapColor.b,0.45)
    );
-   gl_FragColor = vec4(gammaCorrection, alpha);
+   gl_FragColor = vec4(matcapColor.rgb, alpha);
 }

@@ -1,6 +1,6 @@
 
 
-varying vec4 vNormal;
+varying vec3 vNormal;
 
 // Transformation described here: https://stackoverflow.com/questions/29879216/preparing-model-view-and-projection-matrices-for-glsl
 // Variables described here: https://www.khronos.org/opengl/wiki/Built-in_Variable_(GLSL)
@@ -13,5 +13,6 @@ void main() {
     // Applies projection (orthographic/perspective)
     vec4 projectionPos = projectionMatrix * viewPos;
     gl_Position = projectionPos;
-    vNormal = viewMatrix * modelMatrix * vec4(normal, 0.);
+    vec4 viewNormal = viewMatrix * modelMatrix * vec4(normal, 0.);
+    vNormal = normalize(viewNormal.xyz);
 }
