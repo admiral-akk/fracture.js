@@ -4,10 +4,31 @@
 }
 
 .webgl {
-  position: fixed;
+  position: relative !important;
+}
+
+.webglcontainer {
+  position: absolute !important;
   top: 0;
   left: 0;
   outline: none;
+}
+
+.ui {
+  pointer-events: none;
+  position: absolute !important;
+  z-index: 1;
+}
+.text {
+  pointer-events: none;
+  position: absolute !important;
+  color: white;
+  z-index: 1;
+}
+
+.relative {
+  user-select: none;
+  position: relative !important;
 }
 
 html,

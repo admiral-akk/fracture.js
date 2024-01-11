@@ -48,7 +48,11 @@ const sizes = {
   verticalOffset: 0,
   horizontalOffset: 0,
 };
+const topLevelContainer = document.querySelector("div.webglcontainer");
+const canvasContainer = document.querySelector("div.relative");
 const canvas = document.querySelector("canvas.webgl");
+const uiContainer = document.querySelector("div.ui");
+const text = document.querySelector("div.text");
 const renderer = new THREE.WebGLRenderer({ canvas });
 const listener = new THREE.AudioListener();
 renderer.setClearColor("#201919");
@@ -344,8 +348,8 @@ const updateSize = () => {
     sizes.verticalOffset = 0;
     sizes.horizontalOffset = (window.innerWidth - sizes.width) / 2;
   }
-  canvas.style.top = sizes.verticalOffset.toString() + "px";
-  canvas.style.left = sizes.horizontalOffset.toString() + "px";
+  canvasContainer.style.top = sizes.verticalOffset.toString() + "px";
+  canvasContainer.style.left = sizes.horizontalOffset.toString() + "px";
 
   // Render
   renderer.setSize(sizes.width, sizes.height);
@@ -366,7 +370,7 @@ window.addEventListener("dblclick", (event) => {
   if (fullscreenElement) {
     document.exitFullscreen();
   } else {
-    canvas.requestFullscreen();
+    topLevelContainer.requestFullscreen();
   }
 });
 
@@ -1332,6 +1336,7 @@ const geoToDecl = (geometry, onCut) => {
   const b = decl.break();
   const decls = b ? b.map((faces) => new DcelMesh(faces)) : [decl];
 
+  const meshes = [];
   for (const d of decls) {
     const average = d.centerOfMass.clone();
     d.vertices.forEach((v) => v.sub(average));
@@ -1340,7 +1345,9 @@ const geoToDecl = (geometry, onCut) => {
     average.multiplyScalar(1.1);
     const m = makeMesh(d, average, onCut);
     m.offset = average;
+    meshes.push(m);
   }
+  return meshes;
 };
 
 const randomGeo = () => {
@@ -1360,12 +1367,14 @@ const randomGeo = () => {
 
 const portioningChallenge = () => {
   const geo = randomGeo();
-  geoToDecl(geo, dissolveThresholdCut(0.4));
+  const meshes = geoToDecl(geo, dissolveThresholdCut(0.4));
+  text.textContent = "Portioning!";
 };
 
 const triggerPieceChallenge = () => {
   const geo = randomGeo();
-  geoToDecl(geo, dissolveThresholdCut(0.4));
+  const meshes = geoToDecl(geo, dissolveThresholdCut(0.4));
+  text.textContent = "Chop!";
 };
 
 const gameState = {
