@@ -52,7 +52,6 @@ const topLevelContainer = document.querySelector("div.webglcontainer");
 const canvasContainer = document.querySelector("div.relative");
 const canvas = document.querySelector("canvas.webgl");
 const uiContainer = document.querySelector("div.ui");
-const text = document.querySelector("div.text");
 const renderer = new THREE.WebGLRenderer({ canvas });
 const listener = new THREE.AudioListener();
 renderer.setClearColor("#201919");
@@ -1365,6 +1364,20 @@ const randomGeo = () => {
   }
 };
 
+
+
+class GameRules {
+  constructor() {
+    this.state = "StartMenu"
+  }
+
+
+}
+
+const rules = {
+  state: "START"
+}
+
 class StartChallenge {
   constructor(startingVolume, portions, margin) {
     this.startingVolume = startingVolume;
@@ -1390,7 +1403,6 @@ const portioningChallenge = () => {
     [volume / 2, volume / 2],
     volume / 10
   );
-  text.textContent = "Portioning!";
 };
 
 class PieceChallenge {
@@ -1406,7 +1418,6 @@ const triggerPieceChallenge = () => {
   const volume = meshes[0].decl.volume;
   const challenge = new PieceChallenge(volume, volume / 7);
   meshes[0].onCut = dissolveThresholdCut(volume / 7);
-  text.textContent = "Chop!";
 };
 
 const gameState = {
