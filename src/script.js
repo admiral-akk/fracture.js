@@ -66,7 +66,7 @@ document.body.appendChild(stats.dom);
 const camera = new THREE.PerspectiveCamera(55, 16 / 9);
 camera.position.x = 0;
 camera.position.y = 0;
-camera.position.z = 5;
+camera.position.z = 4;
 scene.add(camera);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enabled = false;
@@ -297,7 +297,7 @@ fontLoader.load("./fonts/helvetiker_regular.typeface.json", function (font) {
   fonts.push(font);
   const geometry = new TextGeometry("SLICE TO START", {
     font: font,
-    size: 0.5,
+    size: 0.4,
     height: 0.05,
     curveSegments: 1,
     bevelEnabled: true,
@@ -1364,19 +1364,15 @@ const randomGeo = () => {
   }
 };
 
-
-
 class GameRules {
   constructor() {
-    this.state = "StartMenu"
+    this.state = "StartMenu";
   }
-
-
 }
 
 const rules = {
-  state: "START"
-}
+  state: "START",
+};
 
 class StartChallenge {
   constructor(startingVolume, portions, margin) {
@@ -1403,6 +1399,7 @@ const portioningChallenge = () => {
     [volume / 2, volume / 2],
     volume / 10
   );
+  meshes[0].onCut = dissolveThresholdCut(volume / 50);
 };
 
 class PieceChallenge {
@@ -1417,7 +1414,7 @@ const triggerPieceChallenge = () => {
   const meshes = geoToDecl(geo, dissolveThresholdCut(0.4));
   const volume = meshes[0].decl.volume;
   const challenge = new PieceChallenge(volume, volume / 7);
-  meshes[0].onCut = dissolveThresholdCut(volume / 7);
+  meshes[0].onCut = dissolveThresholdCut(volume / 50);
 };
 
 const gameState = {
