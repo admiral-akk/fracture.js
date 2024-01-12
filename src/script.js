@@ -1365,15 +1365,47 @@ const randomGeo = () => {
   }
 };
 
+class StartChallenge {
+  constructor(startingVolume, portions, margin) {
+    this.startingVolume = startingVolume;
+    this.portions = portions;
+    this.margin = margin;
+  }
+}
+
+class PortioningChallenge {
+  constructor(startingVolume, portions, margin) {
+    this.startingVolume = startingVolume;
+    this.portions = portions;
+    this.margin = margin;
+  }
+}
+
 const portioningChallenge = () => {
   const geo = randomGeo();
   const meshes = geoToDecl(geo, dissolveThresholdCut(0.4));
+  const volume = meshes[0].decl.volume;
+  const challenge = new PortioningChallenge(
+    volume,
+    [volume / 2, volume / 2],
+    volume / 10
+  );
   text.textContent = "Portioning!";
 };
+
+class PieceChallenge {
+  constructor(startingVolume, minVolume) {
+    this.startingVolume = startingVolume;
+    this.minVolume = minVolume;
+  }
+}
 
 const triggerPieceChallenge = () => {
   const geo = randomGeo();
   const meshes = geoToDecl(geo, dissolveThresholdCut(0.4));
+  const volume = meshes[0].decl.volume;
+  const challenge = new PieceChallenge(volume, volume / 7);
+  meshes[0].onCut = dissolveThresholdCut(volume / 7);
   text.textContent = "Chop!";
 };
 
@@ -1413,7 +1445,7 @@ const dissolveThresholdCut = (threshold) => {
           root.remove(newMesh);
         }
         if (root.children.length === 0) {
-          if (gameState.pieceChallenges < 2) {
+          if (gameState.pieceChallenges < 10) {
             triggerPieceChallenge();
             gameState.pieceChallenges++;
           } else {
@@ -1438,7 +1470,7 @@ const makeMesh = (decl, pos, onCut) => {
   boxG.computeBoundingBox();
   const material = new THREE.ShaderMaterial({
     transparent: true,
-    depthWrite: false,
+    depthWrite: true,
     vertexShader: dissolveVertexShader,
     fragmentShader: dissolveFragmentShader,
     uniforms: {
